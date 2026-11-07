@@ -19,6 +19,9 @@ func ParseTimestamp(s string) (time.Time, error) {
 		return time.Time{}, fmt.Errorf("bad timestamp %q, expected YYYYMMDDTHHMMSS.sssZ", s)
 	}
 	t, err := time.Parse(TimestampLayout, s)
+	if err == nil && t.Year() == 0 {
+		err = fmt.Errorf("year out of range")
+	}
 	if err != nil {
 		return time.Time{}, fmt.Errorf("bad timestamp %q: %v", s, err)
 	}

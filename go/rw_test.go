@@ -318,8 +318,11 @@ func TestTimestamps(t *testing.T) {
 	if e.Timestamp() != "20991231T235959.999Z" {
 		t.Fatal(e.Timestamp())
 	}
-	if _, err := ParseTimestamp("20261332T000000.000Z"); err == nil {
-		t.Fatal("bad date accepted")
+	for _, bad := range []string{"20261332T000000.000Z", "20230229T000000.000Z", "00000101T000000.000Z",
+		"20260101T240000.000Z", "20260101T000060.000Z", "2026-01-01", "20260101T000000.000"} {
+		if _, err := ParseTimestamp(bad); err == nil {
+			t.Errorf("%s accepted", bad)
+		}
 	}
 }
 
