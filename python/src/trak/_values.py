@@ -164,7 +164,9 @@ def format_num(value: Any, path: bytes = b"") -> bytes:
 # values are None, objects are dicts, lists are lists and maps are MapNode.
 
 
-MAX_EMPTY_ELEMENTS = 1 << 20
+# Lists of empty objects cost no bytes in the file; bound them so a tiny file
+# can't decode into a huge tree.
+MAX_EMPTY_ELEMENTS = 1 << 16
 
 
 def zero_size(t: Type) -> bool:

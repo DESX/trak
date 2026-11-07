@@ -91,3 +91,4 @@ any of them without a spec change.
 | I8 | `flush()` | Writers make one unbuffered `write` per object, so `flush()` calls fsync. |
 | I9 | Schema text | `define` writes the definition exactly as given and adds a final LF if it's missing. |
 | I10 | Python VLQ test range | The 0 to 10⁷ round trip runs in Python when `TRAK_SLOW=1`. Otherwise it runs to 10⁶. Go and C++ always cover 10⁷. |
+| I11 | Lists of empty objects | A list whose element type writes nothing (a required empty object) costs no bytes per element, so a tiny file could claim billions. Readers refuse to decode one with more than 65,536 elements, as a format error. |
