@@ -47,8 +47,8 @@ Every object is a **body** followed by one **footer line**. Lines end with LF.
 
 | Item | Rule |
 |---|---|
-| Framing (footers, paths, schemas) | ASCII |
-| Values | raw bytes, normally UTF-8 |
+| Framing (footers, schemas, paths) | ASCII, except map keys within paths |
+| Values and map keys | raw bytes, normally UTF-8 |
 | Lengths and offsets | bytes |
 
 ### Letter VLQ
@@ -86,6 +86,7 @@ A pointer stores `(this object's start − target object's end) + 1`. `0` means 
 | `T?` | optional: `T` or absent |
 | `T @name`, `T @name(text)` | annotation |
 
+- A type is written as prefixes, a base, then suffixes. The prefixes `|`, `{}` and `[]` apply to the type after them. The suffixes `?` and `@` apply to the whole type before them, so `[] str?` is an optional list and `[] str @x` annotates the list.
 - `str`, `num` and `enum` are **leaves**. Writers validate `num` and `enum` values. Readers may.
 - An event's top-level type is an object. Keys and enum words match `[A-Za-z_][A-Za-z0-9_]*`. Trailing commas are allowed.
 - An **annotation** name matches `[A-Za-z_][A-Za-z0-9_.-]*`, and its text contains no `)` or LF. trak passes annotations to applications unchanged, and trak 1.0 defines none. A name defined by a later minor version has that meaning only in schemas that declare that version or later.
