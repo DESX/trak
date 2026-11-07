@@ -37,7 +37,15 @@ void ReaderState::load() {
   magic_end = static_cast<std::int64_t>(nl) + 1;
   end = recover(size);
   latest.clear();
-  load_schemas();
+  schemas.clear();
+  by_name.clear();
+  schemas.reserve(schema_footers.size());
+  for (std::size_t i = 0; i < schema_footers.size(); ++i) {
+    const Footer& f = *schema_footers[i];
+    const std::string text(buf.substr(static_cast<std::size_t>(f.start), static_cast<std::size_t>(f.fstart - f.start)));
+    schemas.push_back(build_schema(f.name, static_cast<int>(i + 1), f.stamp, text, false));
+    by_name[f.name] = i;
+  }
 }
 
 FooterPtr ReaderState::footer(std::int64_t at) const {
@@ -59,9 +67,11 @@ FooterPtr ReaderState::prev(const Footer& f) const { return f.start == magic_end
 
 FooterPtr ReaderState::follow(const Footer& f, std::uint64_t pointer) const { return footer(f.target(pointer)); }
 
+// Finds the end of the last valid footer (SPEC §11) and the schema chain it sees.
 std::int64_t ReaderState::recover(std::int64_t total) {
   tail_error.clear();
   tail_error_offset = -1;
+  schema_footers.clear();
   std::int64_t pos = total;
   if (pos > magic_end && buf[static_cast<std::size_t>(pos - 1)] != '\n') pos = last_lf_before(buf, magic_end - 1, pos) + 1;
   while (pos > magic_end) {
@@ -69,7 +79,7 @@ std::int64_t ReaderState::recover(std::int64_t total) {
     const std::string_view head = buf.substr(static_cast<std::size_t>(fstart), 4);
     if (head == "##[ " || head == "==[ ") {
       try {
-        validate_tail(pos);
+        schema_footers = validate_tail(pos);
         return pos;
       } catch (const FormatError& e) {
         cache.erase(pos);
@@ -90,65 +100,55 @@ std::int64_t ReaderState::recover(std::int64_t total) {
   return magic_end;
 }
 
-void ReaderState::validate_tail(std::int64_t at) const {
+// Checks that the footer ending at `at` is valid by SPEC §11: it parses, its
+// type is known, and its VLQ count and walk match its schema.
+std::vector<FooterPtr> ReaderState::validate_tail(std::int64_t at) const {
   const FooterPtr f = footer(at);
-  if (f->schema) {
-    if (f->vlqs[1] != 0) {
-      const FooterPtr p = follow(*f, f->vlqs[1]);
-      if (!p->schema || p->num != f->num - 1) format_error(f->fstart, "previous-schema pointer is wrong");
-    } else if (f->num != 1) {
-      format_error(f->fstart, "schema chain ends early");
+  auto chain = schema_chain(f);
+  if (f->schema) return chain;
+  for (const auto& s : chain) {
+    if (s->name != f->name) continue;
+    const std::string text(buf.substr(static_cast<std::size_t>(s->start), static_cast<std::size_t>(s->fstart - s->start)));
+    const Schema schema = build_schema(s->name, static_cast<int>(s->num), s->stamp, text, false);
+    if (schema.root) {
+      const auto& v = f->vlqs;
+      Walk(*schema.root, v.data() + f->values_begin(), v.size() - f->values_begin(), f->start, f->fstart);
     }
-    return;
+    return chain;
   }
-  FooterPtr node = f;
-  while (node->node() > 0) {
-    const std::uint64_t j = jump(node->node());
-    node = follow(*node, node->vlqs[2]);
-    if (node->name != f->name || node->node() != j) format_error(f->fstart, "jump pointer leads to the wrong node");
-  }
-  if (!node->schema) format_error(f->fstart, "type chain doesn't end at a schema");
-  const std::string text(buf.substr(static_cast<std::size_t>(node->start), static_cast<std::size_t>(node->fstart - node->start)));
-  const Schema s = build_schema(node->name, static_cast<int>(node->num), node->stamp, text, false);
-  if (s.root) {
-    const auto& v = f->vlqs;
-    Walk(*s.root, v.data() + f->values_begin(), v.size() - f->values_begin(), f->start, f->fstart);
-  }
+  format_error(f->fstart, "event of type '" + f->name + "' has no schema");
 }
 
-void ReaderState::load_schemas() {
-  FooterPtr f = last();
-  while (f && !f->schema) {
-    if (f->vlqs[4] == 0) {
-      f = follow(*f, f->vlqs[3]);
-      if (!f->schema) format_error(f->end, "directory pointer for the schema chain misses a schema");
+// Every schema footer visible from f, in index order: walk back to a schema or
+// an event with dir type 0, then follow previous-schema pointers (SPEC §7).
+std::vector<FooterPtr> ReaderState::schema_chain(const FooterPtr& f) const {
+  FooterPtr g = f;
+  while (g && !g->schema) {
+    if (g->vlqs[4] == 0) {
+      g = follow(*g, g->vlqs[3]);
+      if (!g->schema) format_error(g->end, "directory pointer for the schema chain misses a schema");
       break;
     }
-    f = prev(*f);
+    g = prev(*g);
   }
-  std::vector<FooterPtr> chain;
-  while (f) {
-    chain.push_back(f);
-    if (f->vlqs[1] == 0) break;
-    f = follow(*f, f->vlqs[1]);
-    if (!f->schema) format_error(f->end, "previous-schema pointer misses a schema");
+  if (!g) format_error(f->fstart, "event with no schema before it");
+  std::vector<FooterPtr> chain{g};
+  while (chain.back()->vlqs[1] != 0) {
+    g = follow(*chain.back(), chain.back()->vlqs[1]);
+    if (!g->schema) format_error(g->end, "previous-schema pointer misses a schema");
+    chain.push_back(g);
   }
   std::reverse(chain.begin(), chain.end());
-  schema_footers = chain;
-  schemas.clear();
-  by_name.clear();
-  schemas.reserve(chain.size());
+  std::unordered_map<std::string, bool> names;
   for (std::size_t i = 0; i < chain.size(); ++i) {
     const Footer& s = *chain[i];
     if (s.num != i + 1) {
       format_error(s.fstart, "schema " + s.name + " has index " + std::to_string(s.num) + ", expected " +
                                  std::to_string(i + 1));
     }
-    if (by_name.count(s.name)) format_error(s.fstart, "duplicate schema name " + s.name);
-    const std::string text(buf.substr(static_cast<std::size_t>(s.start), static_cast<std::size_t>(s.fstart - s.start)));
-    schemas.push_back(build_schema(s.name, static_cast<int>(i + 1), s.stamp, text, false));
-    by_name[s.name] = i;
+    if (!names.emplace(s.name, true).second) format_error(s.fstart, "duplicate schema name " + s.name);
   }
+  return chain;
 }
 
 FooterPtr ReaderState::latest_footer(const Schema& s) const {

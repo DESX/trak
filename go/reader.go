@@ -80,10 +80,13 @@ func (r *Reader) load() error {
 	}
 	r.version = version
 	r.magicEnd = int64(nl) + 1
-	r.end = r.recover(size)
+	r.end, r.schemaFts = r.recover(size)
 	r.latest = map[int]*footer{}
-	if err := r.loadSchemas(); err != nil {
-		return err
+	r.schemas = make([]*Schema, len(r.schemaFts))
+	r.byName = make(map[string]*Schema, len(r.schemaFts))
+	for i, f := range r.schemaFts {
+		r.schemas[i], _ = buildSchema(f.name, i+1, f.stamp, string(r.buf[f.start:f.fstart]), false)
+		r.byName[f.name] = r.schemas[i]
 	}
 	return nil
 }
@@ -253,7 +256,9 @@ func (r *Reader) follow(f *footer, pointer uint64) (*footer, error) {
 	return r.footer(end)
 }
 
-func (r *Reader) recover(size int64) int64 {
+// recover finds the end of the last valid footer (SPEC §11) and the schema
+// chain it sees.
+func (r *Reader) recover(size int64) (int64, []*footer) {
 	r.TailErr = nil
 	pos := size
 	if pos > r.magicEnd && r.buf[pos-1] != '\n' {
@@ -263,9 +268,9 @@ func (r *Reader) recover(size int64) int64 {
 		fstart := int64(bytes.LastIndexByte(r.buf[r.magicEnd-1:pos-1], '\n')) + r.magicEnd
 		line := r.buf[fstart:pos]
 		if bytes.HasPrefix(line, schemaOpen) || bytes.HasPrefix(line, eventOpen) {
-			err := r.validateTail(pos)
+			chain, err := r.validateTail(pos)
 			if err == nil {
-				return pos
+				return pos, chain
 			}
 			delete(r.cache, pos)
 			if r.TailErr == nil {
@@ -274,97 +279,82 @@ func (r *Reader) recover(size int64) int64 {
 		}
 		pos = fstart
 	}
-	return r.magicEnd
+	return r.magicEnd, nil
 }
 
-func (r *Reader) validateTail(end int64) error {
+// validateTail checks that the footer ending at end is valid by SPEC §11: it
+// parses, its type is known, and its VLQ count and walk match its schema.
+func (r *Reader) validateTail(end int64) ([]*footer, error) {
 	f, err := r.footer(end)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	if f.schema {
-		if f.vlqs[1] != 0 {
-			prev, err := r.follow(f, f.vlqs[1])
-			if err != nil {
-				return err
+	chain, err := r.schemaChain(f)
+	if err != nil || f.schema {
+		return chain, err
+	}
+	for _, s := range chain {
+		if s.name != f.name {
+			continue
+		}
+		schema, _ := buildSchema(s.name, int(s.num), s.stamp, string(r.buf[s.start:s.fstart]), false)
+		if schema.Root != nil {
+			if _, err := newWalk(schema.Root, f.values(), f.start, f.fstart); err != nil {
+				return nil, err
 			}
-			if !prev.schema || prev.num != f.num-1 {
-				return formatErr(f.fstart, "previous-schema pointer is wrong")
-			}
-		} else if f.num != 1 {
-			return formatErr(f.fstart, "schema chain ends early")
 		}
-		return nil
+		return chain, nil
 	}
-	node := f
-	for node.node() > 0 {
-		j := Jump(node.node())
-		node, err = r.follow(node, node.vlqs[2])
-		if err != nil {
-			return err
-		}
-		if node.name != f.name || node.node() != j {
-			return formatErr(f.fstart, "jump pointer leads to the wrong node")
-		}
-	}
-	if !node.schema {
-		return formatErr(f.fstart, "type chain doesn't end at a schema")
-	}
-	s, _ := buildSchema(node.name, int(node.num), node.stamp, string(r.buf[node.start:node.fstart]), false)
-	if s.Root != nil {
-		if _, err := newWalk(s.Root, f.values(), f.start, f.fstart); err != nil {
-			return err
-		}
-	}
-	return nil
+	return nil, formatErr(f.fstart, "event of type %q has no schema", f.name)
 }
 
-func (r *Reader) loadSchemas() error {
-	f, err := r.last()
-	for err == nil && f != nil && !f.schema {
-		if f.vlqs[4] == 0 {
-			f, err = r.follow(f, f.vlqs[3])
-			if err == nil && !f.schema {
-				err = formatErr(f.end, "directory pointer for the schema chain misses a schema")
+// schemaChain returns every schema footer visible from f, in index order:
+// walk back to a schema or an event with dir type 0, then follow
+// previous-schema pointers (SPEC §7).
+func (r *Reader) schemaChain(f *footer) ([]*footer, error) {
+	g := f
+	var err error
+	for g != nil && !g.schema {
+		if g.vlqs[4] == 0 {
+			if g, err = r.follow(g, g.vlqs[3]); err != nil {
+				return nil, err
+			}
+			if !g.schema {
+				return nil, formatErr(g.end, "directory pointer for the schema chain misses a schema")
 			}
 			break
 		}
-		f, err = r.prev(f)
+		if g, err = r.prev(g); err != nil {
+			return nil, err
+		}
 	}
-	if err != nil {
-		return err
+	if g == nil {
+		return nil, formatErr(f.fstart, "event with no schema before it")
 	}
-	var chain []*footer
-	for f != nil {
-		chain = append(chain, f)
-		if f.vlqs[1] == 0 {
-			break
+	chain := []*footer{g}
+	for g.vlqs[1] != 0 {
+		if g, err = r.follow(g, g.vlqs[1]); err != nil {
+			return nil, err
 		}
-		if f, err = r.follow(f, f.vlqs[1]); err != nil {
-			return err
+		if !g.schema {
+			return nil, formatErr(g.end, "previous-schema pointer misses a schema")
 		}
-		if !f.schema {
-			return formatErr(f.end, "previous-schema pointer misses a schema")
-		}
+		chain = append(chain, g)
 	}
 	for i, j := 0, len(chain)-1; i < j; i, j = i+1, j-1 {
 		chain[i], chain[j] = chain[j], chain[i]
 	}
-	r.schemaFts = chain
-	r.schemas = make([]*Schema, 0, len(chain))
-	r.byName = make(map[string]*Schema, len(chain))
+	names := make(map[string]bool, len(chain))
 	for i, s := range chain {
 		if s.num != uint64(i+1) {
-			return formatErr(s.fstart, "schema %s has index %d, expected %d", s.name, s.num, i+1)
+			return nil, formatErr(s.fstart, "schema %s has index %d, expected %d", s.name, s.num, i+1)
 		}
-		if r.byName[s.name] != nil {
-			return formatErr(s.fstart, "duplicate schema name %s", s.name)
+		if names[s.name] {
+			return nil, formatErr(s.fstart, "duplicate schema name %s", s.name)
 		}
-		schema, _ := buildSchema(s.name, i+1, s.stamp, string(r.buf[s.start:s.fstart]), false)
-		r.schemas = append(r.schemas, schema)
-		r.byName[s.name] = schema
+		names[s.name] = true
 	}
-	return nil
+	return chain, nil
 }
 
 // latestFooter returns the latest node of a type: its last event, or its

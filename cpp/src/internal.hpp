@@ -179,8 +179,8 @@ struct ReaderState {
   FooterPtr prev(const Footer& f) const;
   FooterPtr follow(const Footer& f, std::uint64_t pointer) const;
   std::int64_t recover(std::int64_t size);
-  void validate_tail(std::int64_t end) const;
-  void load_schemas();
+  std::vector<FooterPtr> validate_tail(std::int64_t end) const;
+  std::vector<FooterPtr> schema_chain(const FooterPtr& f) const;
   FooterPtr latest_footer(const Schema& s) const;
   FooterPtr navigate(FooterPtr f, std::uint64_t m) const;
   const Schema* schema_of(const Footer& f) const;

@@ -63,9 +63,11 @@ class Reader:
         self.version = f"{m.group(1).decode()}.{m.group(2).decode()}"
         self._magic_end = nl + 1
         self._size = size
-        self._end = self._recover(size)
+        self._end, self._schema_footers = self._recover(size)
         self._latest = {}
-        self._schemas = self._load_schemas()
+        self._schemas = [
+            build_schema(f.name, f.num, f.stamp, self._schema_text(f)) for f in self._schema_footers
+        ]
         self._by_name = {s.name: s for s in self._schemas}
 
     def refresh(self) -> bool:
@@ -166,8 +168,8 @@ class Reader:
             raise FormatError("required pointer is 0", f.fstart)
         return self._footer(f.target(pointer))
 
-    def _recover(self, size: int) -> int:
-        """Find the end of the last valid footer (SPEC §11)."""
+    def _recover(self, size: int) -> tuple[int, list[Footer]]:
+        """Find the end of the last valid footer (SPEC §11) and the schema chain it sees."""
         buf = self.buffer
         pos = size
         #: Why the last complete footer line in the ignored tail is invalid, if there is one.
@@ -179,36 +181,27 @@ class Reader:
             head = buf[fstart : fstart + 4]
             if head in (_footer.SCHEMA_OPEN, _footer.EVENT_OPEN):
                 try:
-                    self._validate_tail(fstart, pos)
-                    return pos
+                    return pos, self._validate_tail(pos)
                 except (FormatError, SchemaError) as e:
                     self._cache.pop(pos, None)
                     if self.tail_error is None:
                         self.tail_error = e
             pos = fstart
-        return self._magic_end
+        return self._magic_end, []
 
-    def _validate_tail(self, fstart: int, end: int) -> None:
+    def _validate_tail(self, end: int) -> list[Footer]:
+        """Check that the footer ending at ``end`` is valid by SPEC §11: it parses, its type
+        is known, and its VLQ count and walk match its schema. Returns the schema chain."""
         f = self._footer(end)
-        if f.is_schema:
-            if f.vlqs[1] != 0:
-                prev = self._follow(f, f.vlqs[1])
-                if not prev.is_schema or prev.num != f.num - 1:
-                    raise FormatError("previous-schema pointer is wrong", fstart)
-            elif f.num != 1:
-                raise FormatError("schema chain ends early", fstart)
-            return
-        node = f
-        while node.node > 0:
-            j = jump(node.node)
-            node = self._follow(node, node.vlqs[2])
-            if node.name != f.name or node.node != j:
-                raise FormatError("jump pointer leads to the wrong node", fstart)
-        if not node.is_schema:
-            raise FormatError("type chain doesn't end at a schema", fstart)
-        schema = build_schema(node.name, node.num, node.stamp, self._schema_text(node))
-        if schema.root is not None:
-            Walk(schema.root, f.values, f.start, f.fstart)
+        chain = self._schema_chain(f)
+        if not f.is_schema:
+            s = next((c for c in chain if c.name == f.name), None)
+            if s is None:
+                raise FormatError(f"event of type {f.name!r} has no schema", f.fstart)
+            schema = build_schema(s.name, s.num, s.stamp, self._schema_text(s))
+            if schema.root is not None:
+                Walk(schema.root, f.values, f.start, f.fstart)
+        return chain
 
     def _schema_text(self, f: Footer) -> str:
         data = self.buffer[f.start : f.fstart]
@@ -217,28 +210,28 @@ class Reader:
         except UnicodeDecodeError:
             return data.decode("latin-1")  # parse fails on non-ASCII with a position
 
-    def _load_schemas(self) -> list[Schema]:
-        f = self._last()
-        while f is not None:
-            if f.is_schema:
-                break
-            if f.vlqs[4] == 0:
-                f = self._follow(f, f.vlqs[3])
-                if not f.is_schema:
+    def _schema_chain(self, f: Footer) -> list[Footer]:
+        """Every schema footer visible from ``f``, in index order: walk back to a schema or an
+        event with dir type 0, then follow previous-schema pointers (SPEC §7)."""
+        g: Footer | None = f
+        while g is not None and not g.is_schema:
+            if g.vlqs[4] == 0:
+                g = self._follow(g, g.vlqs[3])
+                if not g.is_schema:
                     raise FormatError(
-                        "directory pointer for the schema chain misses a schema", f.end
+                        "directory pointer for the schema chain misses a schema", g.end
                     )
                 break
-            f = self._prev(f)
-        chain: list[Footer] = []
-        while f is not None:
-            chain.append(f)
-            f = self._follow(f, f.vlqs[1]) if f.vlqs[1] else None
-            if f is not None and not f.is_schema:
-                raise FormatError("previous-schema pointer misses a schema", f.end)
+            g = self._prev(g)
+        if g is None:
+            raise FormatError("event with no schema before it", f.fstart)
+        chain = [g]
+        while chain[-1].vlqs[1]:
+            g = self._follow(chain[-1], chain[-1].vlqs[1])
+            if not g.is_schema:
+                raise FormatError("previous-schema pointer misses a schema", g.end)
+            chain.append(g)
         chain.reverse()
-        self._schema_footers = chain
-        schemas = []
         names: set[str] = set()
         for i, s in enumerate(chain, 1):
             if s.num != i:
@@ -246,8 +239,7 @@ class Reader:
             if s.name in names:
                 raise FormatError(f"duplicate schema name {s.name}", s.fstart)
             names.add(s.name)
-            schemas.append(build_schema(s.name, s.num, s.stamp, self._schema_text(s)))
-        return schemas
+        return chain
 
     def _latest_footer(self, schema: Schema) -> Footer:
         """The latest node of a type: its last event, or its schema if it has none."""
