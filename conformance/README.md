@@ -68,7 +68,7 @@ A list of operations, applied in order to a new file:
 ```
 
 Values use the same shapes as `expect.json`, with two differences. `num` leaves may be JSON
-integers or decimal strings. Maps are always `[key, value]` pairs, so that entry order is
+integers within 64 bits (signed or unsigned) or decimal strings. Maps are always `[key, value]` pairs, so that entry order is
 explicit in every language. Timestamps are always given, so output is deterministic.
 
 ## Vectors
