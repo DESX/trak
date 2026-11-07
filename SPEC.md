@@ -60,7 +60,7 @@ Every machine number is an unsigned variable-length quantity written in letters:
 | `a`–`z` | value 0–25, more digits follow |
 | `A`–`Z` | value 0–25, last digit |
 
-VLQs are concatenated with no separators.
+VLQs are concatenated with no separators. A VLQ never starts with `a`, so each value has exactly one encoding.
 
 | Value | 0 | 25 | 26 | 148 | 1520 | 52310 |
 |---|---|---|---|---|---|---|
@@ -87,6 +87,7 @@ A pointer stores `(this object's start − target object's end) + 1`. `0` means 
 | `T @name`, `T @name(text)` | annotation |
 
 - A type is written as prefixes, a base, then suffixes. The prefixes `|`, `{}` and `[]` apply to the type after them. The suffixes `?` and `@` apply to the whole type before them, so `[] str?` is an optional list and `[] str @x` annotates the list.
+- `{}` followed by a type is the map prefix. Otherwise it is an empty object, which has no leaves.
 - `str`, `num` and `enum` are **leaves**. Writers validate `num` and `enum` values. Readers may.
 - An event's top-level type is an object. Keys and enum words match `[A-Za-z_][A-Za-z0-9_]*`. Trailing commas are allowed.
 - An **annotation** name matches `[A-Za-z_][A-Za-z0-9_.-]*`, and its text contains no `)` or LF. trak passes annotations to applications unchanged, and trak 1.0 defines none. A name defined by a later minor version has that meaning only in schemas that declare that version or later.
@@ -129,7 +130,7 @@ Leaves are written in schema order, depth first.
 | block | value, LF, `--[ path ]--` LF |
 | absent, or in an empty list or map | nothing |
 
-`path` joins keys and list indexes with `.`, e.g. `tags.1` or `env.region`. Map keys are copied raw. Inline values should be single-line; readers are unaffected either way.
+`path` joins keys and list indexes with `.`, e.g. `tags.1` or `env.region`. Map keys are copied raw, and appear only in the paths of their entry's leaves. If an entry has no leaves, its key is unknown to readers. Inline values should be single-line; readers are unaffected either way.
 
 ### Footer
 
@@ -203,6 +204,7 @@ Leaves are written in schema order, depth first.
 - Write each type's schema once, before its first event.
 - Keep timestamps non-decreasing within each type.
 - Validate `num` and `enum` values. Never inspect `str` values.
+- Reject a map with a repeated key.
 - Append each object with a single write.
 
 ## 11. Recovery

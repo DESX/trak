@@ -37,3 +37,38 @@ and the conformance suite needs UTF-8 map keys.
 are raw bytes like values. No bytes change.
 
 **Applied.** The SPEC.md §4 encoding table.
+
+### D3. Map entries with no leaves (PATCH)
+
+**Question.** A map key appears only in the paths of its entry's leaves. When
+an entry writes no leaves (an empty list or map, an absent optional, an empty
+object), only the key's byte length is stored.
+
+**Answer.** That's allowed. Readers report such a key as unknown (`null`) and
+still give its length. In native trees and `expect.json`, a map is an ordered
+list of `[key, value]` pairs, so unknown keys and file order are both kept.
+
+**Applied.** A sentence in SPEC.md §6 (Body).
+
+### D4. Repeated map keys (PATCH)
+
+**Answer.** Writers reject a map with a repeated key, comparing key bytes. Map
+keys aren't `str` values, so "strings untouched" still holds. Readers and
+`check` don't enforce it.
+
+**Applied.** SPEC.md §10.
+
+### D5. Leading zeros in VLQs (PATCH)
+
+**Answer.** A VLQ never starts with `a` (a leading zero digit). Readers and
+`check` reject one as a format error, so every number has exactly one encoding.
+
+**Applied.** SPEC.md §4 (Letter VLQ).
+
+### D6. `{}` as empty object or map prefix (PATCH)
+
+**Answer.** `{}` (whitespace and comments allowed inside) followed by
+something that starts a type (`|`, `{`, `[` or a word) is the map prefix.
+Otherwise it's an empty object, which has no leaves and no VLQs.
+
+**Applied.** SPEC.md §5 (Types).
