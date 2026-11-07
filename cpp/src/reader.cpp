@@ -215,7 +215,10 @@ std::int64_t Reader::size() const { return s_->size; }
 const std::string& Reader::tail_error() const { return s_->tail_error; }
 std::int64_t Reader::tail_error_offset() const { return s_->tail_error_offset; }
 std::int64_t Reader::footer_reads() const { return s_->footer_reads; }
-void Reader::clear_cache() const { s_->cache.clear(); }
+void Reader::clear_cache() const {
+  s_->cache.clear();
+  s_->latest.clear();
+}
 const std::vector<Schema>& Reader::types() const { return s_->schemas; }
 std::string_view Reader::bytes() const { return s_->buf; }
 

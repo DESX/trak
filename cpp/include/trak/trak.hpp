@@ -350,7 +350,8 @@ class Reader {
   // Why the last complete footer line after end() is invalid, or "".
   const std::string& tail_error() const;
   std::int64_t tail_error_offset() const;
-  // Footer lookups so far, for navigation bound tests.
+  // Footer lookups so far, and a way to forget cached footers and latest
+  // nodes, for navigation bound tests.
   std::int64_t footer_reads() const;
   void clear_cache() const;
 

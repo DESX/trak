@@ -30,6 +30,9 @@ jobs:
       - run: ruff format --check .
       - run: mypy
       - run: pytest --cov=trak --cov-report=term-missing --cov-fail-under=90
+        env:
+          # Full-size runs (1M-event bounds file, VLQ round trip to 10^7) on one job.
+          TRAK_SLOW: ${{ matrix.os == 'ubuntu-latest' && matrix.python == '3.12' && '1' || '' }}
 
   conformance:
     name: conformance vectors are up to date

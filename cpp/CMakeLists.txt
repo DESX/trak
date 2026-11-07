@@ -70,7 +70,8 @@ if(TRAK_BUILD_TESTS)
     tests/schema_test.cpp
     tests/rw_test.cpp
     tests/conformance_test.cpp
-    tests/vectors.cpp)
+    tests/vectors.cpp
+    tests/bounds_test.cpp)
   target_link_libraries(trak_tests PRIVATE trak::trak GTest::gtest_main nlohmann_json::nlohmann_json)
   target_compile_definitions(trak_tests PRIVATE
     TRAK_REPO_DIR="${CMAKE_CURRENT_SOURCE_DIR}/..")
