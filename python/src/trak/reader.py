@@ -130,8 +130,12 @@ class Reader:
             footers.append(f)
             f = self._prev(f)
         for f in reversed(footers):
-            if not f.is_schema:
-                yield Event(self, self._by_name[f.name], f)
+            if f.is_schema:
+                continue
+            schema = self._by_name.get(f.name)
+            if schema is None:
+                raise FormatError(f"event of type {f.name!r} has no schema", f.fstart)
+            yield Event(self, schema, f)
 
     # --- footers and navigation ---------------------------------------------------
 

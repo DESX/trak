@@ -106,3 +106,10 @@ def test_check_counts_objects(tmp_path: pathlib.Path) -> None:
     p = tmp_path / "x.trak"
     p.write_bytes(b"trak 1.0\n")
     assert trak.check(p) == 0
+
+
+def test_iterating_event_without_schema(tmp_path: pathlib.Path, base: bytes) -> None:
+    p = tmp_path / "x.trak"
+    p.write_bytes(base.replace(b"==[ build 2 ", b"==[ bxild 2 "))
+    with trak.open(p) as r, pytest.raises(trak.FormatError, match="has no schema"):
+        list(r)
