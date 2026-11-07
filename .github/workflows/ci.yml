@@ -113,3 +113,26 @@ jobs:
       - run: cmake -S cpp -B cpp/build -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_COMPILER=${{ matrix.cxx }} -DTRAK_WERROR=ON -DTRAK_SANITIZE=ON
       - run: cmake --build cpp/build --parallel
       - run: ctest --test-dir cpp/build --output-on-failure
+
+  cpp-tidy:
+    name: c++ clang-tidy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install clang-tidy==18.1.8
+      - run: cmake -S cpp -B cpp/build -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DTRAK_BUILD_TESTS=OFF
+      - run: clang-tidy -p cpp/build cpp/src/*.cpp
+
+  cpp-fuzz:
+    name: c++ libFuzzer (short run)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - run: cmake -S cpp -B cpp/build -DCMAKE_CXX_COMPILER=clang++ -DTRAK_BUILD_TESTS=OFF -DTRAK_BUILD_FUZZERS=ON
+      - run: cmake --build cpp/build --target trak_fuzz_reader --parallel
+      - run: mkdir -p corpus && cp conformance/*/*.trak corpus/
+      - run: cpp/build/trak_fuzz_reader -max_total_time=60 -timeout=10 corpus
