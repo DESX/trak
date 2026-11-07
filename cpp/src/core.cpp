@@ -157,7 +157,7 @@ std::string format_timestamp(Millis ms) {
   std::int64_t y;
   unsigned m, d;
   civil_from_days(days, y, m, d);
-  char buf[32];
+  char buf[80];
   std::snprintf(buf, sizeof buf, "%04lld%02u%02uT%02d%02d%02d.%03dZ", static_cast<long long>(y), m, d,
                 static_cast<int>(rem / 3600000), static_cast<int>(rem / 60000 % 60), static_cast<int>(rem / 1000 % 60),
                 static_cast<int>(rem % 1000));
