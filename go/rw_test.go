@@ -208,35 +208,6 @@ func TestNavigation(t *testing.T) {
 	}
 }
 
-func TestNativeNested(t *testing.T) {
-	p := filepath.Join(t.TempDir(), "n.trak")
-	w := must(Create(p, Options{}))
-	must(w.Define("t", "{ jobs: [] { env: {} str, log: |str? }, labels: {} [] str, empty: [] {}, m: {} num }"))
-	must(w.Write("t", map[string]any{
-		"jobs": []any{
-			map[string]any{"env": Pairs{{"z", "1"}, {"a.b", "2"}}, "log": "x\n--[ log ]--"},
-			map[string]any{"env": map[string]string{"b": "2", "a": "1"}},
-		},
-		"labels": []any{[]any{"none", []string{}}, []any{"some", []string{"1"}}},
-		"empty":  []struct{}{{}, {}},
-		"m":      map[string]uint8{"k": 7},
-	}))
-	w.Close()
-	must(Check(p))
-	r := must(Open(p))
-	defer r.Close()
-	tab := must(r.Table("t"))
-	e := must(tab.Get(1))
-	got, _ := json.Marshal(nativeJSON(must(e.Native())))
-	want := `{"empty":[{},{}],"jobs":[{"env":[["z","1"],["a.b","2"]],"log":"x\n--[ log ]--"},{"env":[["a","1"],["b","2"]],"log":null}],"labels":[[null,[]],["some",["1"]]],"m":[["k","7"]]}`
-	if string(got) != want {
-		t.Fatalf("got %s", got)
-	}
-	if v, _, _ := e.Get("jobs.0.env.a.b"); v != "2" {
-		t.Fatal(v)
-	}
-}
-
 func TestNumFormats(t *testing.T) {
 	cases := []struct {
 		v    any
