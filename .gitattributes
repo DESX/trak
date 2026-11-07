@@ -1,0 +1,6 @@
+# trak files are byte-exact test vectors: never convert line endings.
+* text=auto eol=lf
+*.trak binary
+conformance/valid/** linguist-generated=true
+conformance/invalid/** linguist-generated=true
+conformance/write/** linguist-generated=true
