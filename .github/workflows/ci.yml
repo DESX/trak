@@ -46,6 +46,8 @@ jobs:
       - run: python conformance/generate.py
       - run: git diff --exit-code -- conformance
       - run: ruff check conformance && ruff format --check conformance
+      - name: License copies match
+        run: cmp LICENSE python/LICENSE && cmp LICENSE go/LICENSE
 
   go:
     name: go ${{ matrix.go }} / ${{ matrix.os }}
@@ -171,3 +173,17 @@ jobs:
             --impl python="python python/tests/interop.py" \
             --impl go=go/interop \
             --impl cpp=$cpp
+
+  readme:
+    name: README quickstarts run as written
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+          cache-dependency-path: go/go.sum
+      - run: python docs/check_readme.py
