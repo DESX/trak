@@ -71,6 +71,11 @@ jobs:
         with:
           working-directory: go
           install-go: false
+      - name: Fuzz
+        if: runner.os == 'Linux' && matrix.go == 'stable'
+        run: |
+          go test -run '^$' -fuzz '^FuzzReader$' -fuzztime 30s .
+          go test -run '^$' -fuzz '^FuzzSchemaParser$' -fuzztime 30s .
 
   cpp:
     name: c++ ${{ matrix.compiler }} / ${{ matrix.os }}

@@ -190,6 +190,25 @@ func (r *Reader) Events(yield func(*Event) bool) error {
 	return nil
 }
 
+// EventsBackward calls yield for every event from the last one back to the
+// first, until yield returns false.
+func (r *Reader) EventsBackward(yield func(*Event) bool) error {
+	f, err := r.last()
+	for err == nil && f != nil {
+		if !f.schema {
+			s := r.byName[f.name]
+			if s == nil {
+				return formatErr(f.fstart, "event of type %q has no schema", f.name)
+			}
+			if !yield(&Event{r: r, Schema: s, f: f}) {
+				return nil
+			}
+		}
+		f, err = r.prev(f)
+	}
+	return err
+}
+
 // --- footers and navigation ---------------------------------------------------
 
 func (r *Reader) footer(end int64) (*footer, error) {
