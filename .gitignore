@@ -11,3 +11,5 @@ build/
 /go/trak
 /go/cmd/trak/trak
 /bench/out/
+/go/interop
+/go/interop.exe

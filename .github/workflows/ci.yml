@@ -136,3 +136,35 @@ jobs:
       - run: cmake --build cpp/build --target trak_fuzz_reader --parallel
       - run: mkdir -p corpus && cp conformance/*/*.trak corpus/
       - run: cpp/build/trak_fuzz_reader -max_total_time=60 -timeout=10 corpus
+
+  cross:
+    name: cross-implementation / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+          cache-dependency-path: go/go.sum
+      - run: pip install -e python
+      - run: cd go && go build -o interop ./internal/interop
+      - run: cmake -S cpp -B cpp/build -DCMAKE_BUILD_TYPE=Release
+      - run: cmake --build cpp/build --config Release --target trak_interop --parallel
+      - name: Cross-check
+        run: |
+          cpp=cpp/build/trak_interop
+          if [ -f cpp/build/Release/trak_interop.exe ]; then cpp=cpp/build/Release/trak_interop.exe; fi
+          python conformance/crosscheck.py --seeds 200 \
+            --impl python="python python/tests/interop.py" \
+            --impl go=go/interop \
+            --impl cpp=$cpp
