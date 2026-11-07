@@ -48,11 +48,11 @@ class Writer:
         self._seq = 0
         flags = os.O_RDWR | getattr(os, "O_BINARY", 0)
         if append:
-            self._fd = os.open(self.path, flags)
+            self._fd = os.open(self.path, flags, 0o666)
         elif overwrite:
-            self._fd = os.open(self.path, flags | os.O_CREAT)
+            self._fd = os.open(self.path, flags | os.O_CREAT, 0o666)
         else:
-            self._fd = os.open(self.path, flags | os.O_CREAT | os.O_EXCL)
+            self._fd = os.open(self.path, flags | os.O_CREAT | os.O_EXCL, 0o666)
         try:
             lock(self._fd)
             if append and os.fstat(self._fd).st_size > 0:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import dataclasses
 import datetime as dt
+import os
 import pathlib
 from decimal import Decimal
 from typing import Any
@@ -514,3 +515,10 @@ def test_unparseable_schema_still_navigates(tmp_path: pathlib.Path) -> None:
         trak.check(p)
     with trak.open_append(p) as w, pytest.raises(trak.SchemaError, match="can't write"):
         w.write("t", {"a": "y"})
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX permissions")
+def test_new_files_are_not_executable(tmp_path: pathlib.Path) -> None:
+    p = tmp_path / "x.trak"
+    trak.create(p).close()
+    assert p.stat().st_mode & 0o111 == 0
