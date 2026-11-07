@@ -72,3 +72,22 @@ something that starts a type (`|`, `{`, `[` or a word) is the map prefix.
 Otherwise it's an empty object, which has no leaves and no VLQs.
 
 **Applied.** SPEC.md §5 (Types).
+
+## Implementation choices
+
+These choices are left to implementations by the spec. All three reference
+libraries make them the same way. They change no bytes, so Joel can revisit
+any of them without a spec change.
+
+| # | Topic | Choice |
+|---|---|---|
+| I1 | Field paths in schema APIs | List indexes are written `[]` and map keys `{}`, e.g. `jobs.[].env.{}`. |
+| I2 | A leaf's description and annotations | They come from the leaf's own field (the nearest enclosing object member). Annotations on the types between that member and the leaf are listed outermost first. Annotations on the top-level object are exposed on the schema. |
+| I3 | A leaf's `optional` flag | True when any type from the root down to the leaf is optional, i.e. the column can be empty. |
+| I4 | Unknown leaves when writing | `define` rejects them, because a 1.0 writer declares `1.0` in the schema footer. Readers accept them as `str` (§9). |
+| I5 | Schema versions | A schema footer whose major isn't 1 makes that schema unparseable: the type still navigates, but its values are unavailable. `check` parses a `1.0` schema strictly and a newer minor leniently. |
+| I6 | `check` and torn tails | A torn tail is accepted only if it has no complete footer line. If the bytes ignored by recovery hold a complete but invalid footer line, `check` fails and reports why that footer is invalid. Without this, a corrupt last object would pass as a torn tail. |
+| I7 | `Event.get(path)` with colliding paths | Map keys may contain `.`, so two leaves can share a path. The first one in file order wins. `to_native()` is always unambiguous. |
+| I8 | `flush()` | Writers make one unbuffered `write` per object, so `flush()` calls fsync. |
+| I9 | Schema text | `define` writes the definition exactly as given and adds a final LF if it's missing. |
+| I10 | Python VLQ test range | The 0 to 10⁷ round trip runs in Python when `TRAK_SLOW=1`. Otherwise it runs to 10⁶. Go and C++ always cover 10⁷. |
