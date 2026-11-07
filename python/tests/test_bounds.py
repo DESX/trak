@@ -71,4 +71,4 @@ def test_get_reads_log_n_footers(big: pathlib.Path) -> None:
                 if not 1 <= m <= n:
                     continue
                 r._cache.clear()
-                assert reads(r, lambda m=m: t.get(m)) <= bound, (s.name, m)
+                assert reads(r, lambda m=m, t=t: t.get(m)) <= bound, (s.name, m)

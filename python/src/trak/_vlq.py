@@ -29,9 +29,15 @@ def encode(n: int) -> bytes:
     return bytes(out)
 
 
+# Encodings of every value with up to three letters, for the write path.
+_TABLE = [encode(v) for v in range(26**3)]
+_TABLE_SIZE = len(_TABLE)
+
+
 def encode_all(values: list[int]) -> bytes:
     """Encode a sequence of values, concatenated."""
-    return b"".join([_SMALL[v] if 0 <= v < 26 else encode(v) for v in values])
+    table, size = _TABLE, _TABLE_SIZE
+    return b"".join([table[v] if 0 <= v < size else encode(v) for v in values])
 
 
 def decode(data: bytes, offset: int = 0) -> list[int]:

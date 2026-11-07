@@ -138,6 +138,7 @@ class Writer:
             raise ValueError(f"type {type!r} is not defined") from None
         if t.schema.root is None:
             raise SchemaError(f"can't write {type}: {t.schema.error}")
+        stamp = None
         if timestamp is None:
             ms = max(time.time_ns() // 1_000_000, t.last_ms)
         else:
@@ -145,6 +146,8 @@ class Writer:
                 ms = _time.to_ms(timestamp)
             except (TypeError, builtins.ValueError) as e:
                 raise ValueError(str(e)) from None
+            if isinstance(timestamp, str):
+                stamp = timestamp  # valid stamps are canonical, so reuse the text
             if ms < t.last_ms:
                 raise ValueError(
                     f"timestamp {_time.from_ms(ms)} is earlier than {type}'s last event"
@@ -168,7 +171,9 @@ class Writer:
             0,
         ]
         vlqs.extend(values)
-        self._write(body + _footer.event_line(type, n, _time.from_ms(ms), vlqs))
+        if stamp is None:
+            stamp = _time.from_ms(ms)
+        self._write(body + _footer.event_line(type, n, stamp, vlqs))
         while t.spine[-1][0] > j:
             t.spine.pop()
         t.spine.append((n, self._offset))

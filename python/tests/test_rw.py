@@ -522,3 +522,27 @@ def test_new_files_are_not_executable(tmp_path: pathlib.Path) -> None:
     p = tmp_path / "x.trak"
     trak.create(p).close()
     assert p.stat().st_mode & 0o111 == 0
+
+
+def test_time_conversions_match_datetime() -> None:
+    import random as _random
+
+    epoch = dt.datetime(1970, 1, 1, tzinfo=UTC)
+    rng = _random.Random(5)
+    lo, hi = -62135596800000, 253402300799999  # years 0001 to 9999
+    for ms in [0, -1, -86_400_000, lo, hi] + [rng.randint(lo, hi) for _ in range(20000)]:
+        t = epoch + dt.timedelta(milliseconds=ms)
+        want = t.strftime("%Y%m%dT%H%M%S.") + f"{t.microsecond // 1000:03d}Z"
+        want = want.zfill(20) if t.year < 1000 else want
+        assert from_ms(ms) == want, ms
+        assert to_ms(want) == ms
+    for bad in [
+        "20261332T000000.000Z",
+        "20230229T000000.000Z",
+        "00000101T000000.000Z",
+        "20260101T240000.000Z",
+        "20260101T000060.000Z",
+        "2026010aT000000.000Z",
+    ]:
+        with pytest.raises(ValueError):
+            to_ms(bad)
