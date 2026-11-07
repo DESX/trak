@@ -20,11 +20,14 @@ type Reader struct {
 	magicEnd  int64
 	end       int64
 	version   string
-	cache     map[int64]*footer
+	cache     map[int64]*footer // recent footers, by end offset
+	oldCache  map[int64]*footer // the previous generation; hits move back to cache
 	latest    map[int]*footer
 	schemas   []*Schema
 	byName    map[string]*Schema
 	schemaFts []*footer
+
+	strings map[string]string // interned type names and leaf paths
 
 	// TailErr says why the last complete footer line after End is invalid,
 	// when there is one (see Check).
@@ -40,7 +43,7 @@ func Open(path string) (*Reader, error) {
 	if err != nil {
 		return nil, err
 	}
-	r := &Reader{path: path, file: f, cache: map[int64]*footer{}}
+	r := &Reader{path: path, file: f, cache: map[int64]*footer{}, strings: map[string]string{}}
 	if err := r.load(); err != nil {
 		r.Close()
 		return nil, err
@@ -105,9 +108,11 @@ func (r *Reader) Refresh() (bool, error) {
 		return false, nil
 	}
 	oldEnd := r.end
-	for end := range r.cache {
-		if end > oldEnd {
-			delete(r.cache, end)
+	for _, c := range []map[int64]*footer{r.cache, r.oldCache} {
+		for end := range c {
+			if end > oldEnd {
+				delete(c, end)
+			}
 		}
 	}
 	if err := r.load(); err != nil {
@@ -212,6 +217,19 @@ func (r *Reader) EventsBackward(yield func(*Event) bool) error {
 	return err
 }
 
+// intern returns a string equal to b, allocating only the first time. The
+// set is bounded so a file full of distinct paths can't grow it forever.
+func (r *Reader) intern(b []byte) string {
+	if s, ok := r.strings[string(b)]; ok {
+		return s
+	}
+	s := string(b)
+	if len(r.strings) < 1<<16 {
+		r.strings[s] = s
+	}
+	return s
+}
+
 // --- footers and navigation ---------------------------------------------------
 
 func (r *Reader) footer(end int64) (*footer, error) {
@@ -219,19 +237,30 @@ func (r *Reader) footer(end int64) (*footer, error) {
 	if f, ok := r.cache[end]; ok {
 		return f, nil
 	}
+	if f, ok := r.oldCache[end]; ok {
+		r.remember(end, f)
+		return f, nil
+	}
 	if end <= r.magicEnd || end > r.size || r.buf[end-1] != '\n' {
 		return nil, formatErr(end, "pointer doesn't land on the end of an object")
 	}
 	fstart := int64(bytes.LastIndexByte(r.buf[r.magicEnd-1:end-1], '\n')) + r.magicEnd
-	f, err := parseFooter(r.buf, fstart, end, r.magicEnd)
+	f, err := parseFooter(r.buf, fstart, end, r.magicEnd, r.intern)
 	if err != nil {
 		return nil, err
 	}
+	r.remember(end, f)
+	return f, nil
+}
+
+// remember caches a footer. When the cache fills it becomes the old
+// generation, so footers still in use (like the upper levels of the jump
+// structure) survive by being promoted on their next hit.
+func (r *Reader) remember(end int64, f *footer) {
 	if len(r.cache) >= footerCacheSize {
-		clear(r.cache)
+		r.oldCache, r.cache = r.cache, make(map[int64]*footer, footerCacheSize)
 	}
 	r.cache[end] = f
-	return f, nil
 }
 
 func (r *Reader) last() (*footer, error) {
@@ -273,6 +302,7 @@ func (r *Reader) recover(size int64) (int64, []*footer) {
 				return pos, chain
 			}
 			delete(r.cache, pos)
+			delete(r.oldCache, pos)
 			if r.TailErr == nil {
 				r.TailErr = err
 			}
@@ -646,7 +676,7 @@ func (e *Event) Leaves() ([]Leaf, error) {
 	out := make([]Leaf, len(w.leaves))
 	for i := range w.leaves {
 		rec := &w.leaves[i]
-		out[i] = Leaf{string(e.path(rec)), e.value(rec), rec.t}
+		out[i] = Leaf{e.r.intern(e.path(rec)), e.value(rec), rec.t}
 	}
 	return out, nil
 }

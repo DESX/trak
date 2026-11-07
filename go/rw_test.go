@@ -175,6 +175,7 @@ func TestNavigation(t *testing.T) {
 	}
 	for _, n := range []int64{1, 2, 777, 1999, 2000} {
 		clear(r.cache)
+		clear(r.oldCache)
 		before := r.FooterReads
 		must(a.Get(n))
 		if reads := r.FooterReads - before; reads > 3*11+4 {

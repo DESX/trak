@@ -22,7 +22,11 @@ func AppendVLQ(dst []byte, v uint64) []byte {
 // DecodeVLQs decodes concatenated letter VLQs. offset locates data in the
 // file for error messages.
 func DecodeVLQs(data []byte, offset int64) ([]uint64, error) {
-	out := make([]uint64, 0, len(data))
+	return appendVLQs(make([]uint64, 0, len(data)), data, offset)
+}
+
+// appendVLQs decodes data like DecodeVLQs, appending to out.
+func appendVLQs(out []uint64, data []byte, offset int64) ([]uint64, error) {
 	var v uint64
 	started := false
 	for i, c := range data {

@@ -95,3 +95,16 @@ func TestJumpMatchesRecurrence(t *testing.T) {
 		t.Fatal("large jumps")
 	}
 }
+
+func TestAppendStampMatchesTimeFormat(t *testing.T) {
+	rng := rand.New(rand.NewSource(3))
+	ms := []int64{0, -1, -86_400_000, 1_794_000_000_000, 253402300799999, -62135596800000}
+	for i := 0; i < 100000; i++ {
+		ms = append(ms, rng.Int63n(253402300799999+62135596800000)-62135596800000)
+	}
+	for _, m := range ms {
+		if got, want := string(appendStamp(nil, m)), FormatTimestamp(fromMillis(m)); got != want {
+			t.Fatalf("%d: %s != %s", m, got, want)
+		}
+	}
+}

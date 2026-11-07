@@ -23,21 +23,21 @@ type Pairs []Pair
 type encoder struct {
 	body []byte
 	vals []uint64
+	path []byte // the current leaf path, grown and truncated as the walk goes
 }
 
-func encodeValue(root *Type, v any) ([]byte, []uint64, error) {
-	e := &encoder{}
-	if err := e.object(root, reflect.ValueOf(v), nil); err != nil {
-		return nil, nil, err
-	}
-	return e.body, e.vals, nil
+// encode appends the body and value VLQs for v, reusing e's buffers.
+func (e *encoder) encode(root *Type, v any) error {
+	e.body, e.vals, e.path = e.body[:0], e.vals[:0], e.path[:0]
+	return e.object(root, v)
 }
 
 func showPath(path []byte) string {
 	if len(path) == 0 {
 		return "<root>"
 	}
-	return strconv.Quote(string(path))[1 : len(strconv.Quote(string(path)))-1]
+	q := strconv.Quote(string(path))
+	return q[1 : len(q)-1]
 }
 
 // deref unwraps interfaces and pointers. ok is false for nil.
@@ -51,15 +51,25 @@ func deref(v reflect.Value) (reflect.Value, bool) {
 	return v, v.IsValid()
 }
 
-func join(path []byte, key string) []byte {
-	out := make([]byte, 0, len(path)+1+len(key))
-	if len(path) > 0 {
-		out = append(append(out, path...), '.')
+// push appends ".key" (or "key" at the top level) to the current path and
+// returns the length to truncate back to.
+func (e *encoder) push(key string) int {
+	n := len(e.path)
+	if n > 0 {
+		e.path = append(e.path, '.')
 	}
-	return append(out, key...)
+	e.path = append(e.path, key...)
+	return n
 }
 
-// members returns an object value's fields by key.
+func (e *encoder) pushIndex(i int) int {
+	n := len(e.path)
+	e.path = strconv.AppendInt(append(e.path, '.'), int64(i), 10)
+	return n
+}
+
+// members returns an object value's fields by key, for values that aren't
+// map[string]any (structs and other maps), using reflection.
 func members(v reflect.Value, path []byte) (map[string]reflect.Value, error) {
 	v, ok := deref(v)
 	if !ok {
@@ -97,94 +107,211 @@ func members(v reflect.Value, path []byte) (map[string]reflect.Value, error) {
 	return out, nil
 }
 
-func (e *encoder) object(t *Type, v reflect.Value, path []byte) error {
-	fields, err := members(v, path)
+func join(path []byte, key string) []byte {
+	out := make([]byte, 0, len(path)+1+len(key))
+	if len(path) > 0 {
+		out = append(append(out, path...), '.')
+	}
+	return append(out, key...)
+}
+
+func hasMember(t *Type, key string) bool {
+	for _, m := range t.Members {
+		if m.Key == key {
+			return true
+		}
+	}
+	return false
+}
+
+func (e *encoder) object(t *Type, v any) error {
+	if m, ok := v.(map[string]any); ok {
+		found := 0
+		for k := range m {
+			if !hasMember(t, k) {
+				return valueErr("%s: unknown field '%s'", showPath(e.path), k)
+			}
+		}
+		for _, mem := range t.Members {
+			x, ok := m[mem.Key]
+			if ok {
+				found++
+			}
+			n := e.push(mem.Key)
+			if err := e.value(mem.Type, x); err != nil {
+				return err
+			}
+			e.path = e.path[:n]
+		}
+		return nil
+	}
+	fields, err := members(reflect.ValueOf(v), e.path)
 	if err != nil {
 		return err
 	}
 	for k := range fields {
-		found := false
-		for _, m := range t.Members {
-			if m.Key == k {
-				found = true
-				break
-			}
-		}
-		if !found {
-			return valueErr("%s: unknown field '%s'", showPath(path), k)
+		if !hasMember(t, k) {
+			return valueErr("%s: unknown field '%s'", showPath(e.path), k)
 		}
 	}
-	for _, m := range t.Members {
-		if err := e.value(m.Type, fields[m.Key], join(path, m.Key)); err != nil {
+	for _, mem := range t.Members {
+		var x any
+		if f, ok := fields[mem.Key]; ok && f.IsValid() && f.CanInterface() {
+			x = f.Interface()
+		}
+		n := e.push(mem.Key)
+		if err := e.value(mem.Type, x); err != nil {
 			return err
 		}
+		e.path = e.path[:n]
 	}
 	return nil
 }
 
-func (e *encoder) value(t *Type, v reflect.Value, path []byte) error {
-	v, present := deref(v)
-	if !present {
-		if !t.Optional {
-			return valueErr("%s: value is required", showPath(path))
+func (e *encoder) value(t *Type, v any) error {
+	if v == nil {
+		return e.absent(t)
+	}
+	switch v.(type) {
+	case string, []byte, int, int64, float64, map[string]any, []any, []string, Pairs:
+	default:
+		// Unwrap pointers and interfaces; a nil one is absent.
+		rv := reflect.ValueOf(v)
+		if k := rv.Kind(); k == reflect.Pointer || k == reflect.Interface {
+			rv, ok := deref(rv)
+			if !ok {
+				return e.absent(t)
+			}
+			v = rv.Interface()
 		}
-		e.vals = append(e.vals, 0)
-		return nil
 	}
 	if t.Optional {
 		e.vals = append(e.vals, 1)
 	}
 	switch t.Kind {
 	case KindStr, KindNum, KindEnum:
-		data, err := leafBytes(t, v, path)
-		if err != nil {
-			return err
-		}
-		e.vals = append(e.vals, uint64(len(data)))
 		if t.Block {
-			e.body = append(e.body, data...)
+			start := len(e.body)
+			if err := e.appendLeaf(t, v); err != nil {
+				return err
+			}
+			e.vals = append(e.vals, uint64(len(e.body)-start))
 			e.body = append(e.body, "\n--[ "...)
-			e.body = append(e.body, path...)
+			e.body = append(e.body, e.path...)
 			e.body = append(e.body, " ]--\n"...)
 		} else {
-			e.body = append(e.body, path...)
+			e.body = append(e.body, e.path...)
 			e.body = append(e.body, ": "...)
-			e.body = append(e.body, data...)
+			start := len(e.body)
+			if err := e.appendLeaf(t, v); err != nil {
+				return err
+			}
+			e.vals = append(e.vals, uint64(len(e.body)-start))
 			e.body = append(e.body, '\n')
 		}
 		return nil
 	case KindObject:
-		return e.object(t, v, path)
+		return e.object(t, v)
 	case KindList:
-		if (v.Kind() != reflect.Slice && v.Kind() != reflect.Array) || isBytes(v) {
-			return valueErr("%s: expected a list, got %s", showPath(path), v.Type())
+		switch l := v.(type) {
+		case []any:
+			e.vals = append(e.vals, uint64(len(l)))
+			for i, x := range l {
+				n := e.pushIndex(i)
+				if err := e.value(t.Elem, x); err != nil {
+					return err
+				}
+				e.path = e.path[:n]
+			}
+			return nil
+		case []string:
+			e.vals = append(e.vals, uint64(len(l)))
+			for i, x := range l {
+				n := e.pushIndex(i)
+				if err := e.value(t.Elem, x); err != nil {
+					return err
+				}
+				e.path = e.path[:n]
+			}
+			return nil
 		}
-		e.vals = append(e.vals, uint64(v.Len()))
-		for i := 0; i < v.Len(); i++ {
-			if err := e.value(t.Elem, v.Index(i), join(path, strconv.Itoa(i))); err != nil {
+		rv := reflect.ValueOf(v)
+		if (rv.Kind() != reflect.Slice && rv.Kind() != reflect.Array) || isBytes(rv) {
+			return valueErr("%s: expected a list, got %s", showPath(e.path), rv.Type())
+		}
+		e.vals = append(e.vals, uint64(rv.Len()))
+		for i := 0; i < rv.Len(); i++ {
+			n := e.pushIndex(i)
+			if err := e.value(t.Elem, rv.Index(i).Interface()); err != nil {
 				return err
 			}
+			e.path = e.path[:n]
 		}
 		return nil
 	default:
-		entries, err := mapEntries(v, path)
+		entries, err := mapEntries(reflect.ValueOf(v), e.path)
 		if err != nil {
 			return err
 		}
 		e.vals = append(e.vals, uint64(len(entries)))
-		seen := make(map[string]bool, len(entries))
+		var seen map[string]bool
+		if len(entries) > 1 {
+			seen = make(map[string]bool, len(entries))
+		}
 		for _, p := range entries {
-			if seen[p.Key] {
-				return valueErr("%s: repeated map key '%s'", showPath(path), p.Key)
+			if seen != nil {
+				if seen[p.Key] {
+					return valueErr("%s: repeated map key '%s'", showPath(e.path), p.Key)
+				}
+				seen[p.Key] = true
 			}
-			seen[p.Key] = true
 			e.vals = append(e.vals, uint64(len(p.Key)))
-			if err := e.value(t.Elem, reflect.ValueOf(p.Value), join(path, p.Key)); err != nil {
+			n := e.push(p.Key)
+			if err := e.value(t.Elem, p.Value); err != nil {
 				return err
 			}
+			e.path = e.path[:n]
 		}
 		return nil
 	}
+}
+
+func (e *encoder) absent(t *Type) error {
+	if !t.Optional {
+		return valueErr("%s: value is required", showPath(e.path))
+	}
+	e.vals = append(e.vals, 0)
+	return nil
+}
+
+// appendLeaf appends a leaf's bytes to the body, with fast paths for common
+// Go types.
+func (e *encoder) appendLeaf(t *Type, v any) error {
+	switch x := v.(type) {
+	case string:
+		if t.Kind == KindStr {
+			e.body = append(e.body, x...)
+			return nil
+		}
+	case []byte:
+		if t.Kind == KindStr {
+			e.body = append(e.body, x...)
+			return nil
+		}
+	case int:
+		if t.Kind == KindNum {
+			e.body = strconv.AppendInt(e.body, int64(x), 10)
+			return nil
+		}
+	case int64:
+		if t.Kind == KindNum {
+			e.body = strconv.AppendInt(e.body, x, 10)
+			return nil
+		}
+	}
+	data, err := leafBytes(t, reflect.ValueOf(v), e.path)
+	e.body = append(e.body, data...)
+	return err
 }
 
 var pairsType = reflect.TypeOf(Pairs(nil))
@@ -391,7 +518,7 @@ type walk struct {
 }
 
 func newWalk(root *Type, vals []uint64, start, end int64) (w *walk, err error) {
-	w = &walk{vals: vals, off: start, end: end}
+	w = &walk{vals: vals, off: start, end: end, leaves: make([]leafRec, 0, len(vals))}
 	defer func() {
 		if r := recover(); r != nil {
 			fe, ok := r.(*FormatError)

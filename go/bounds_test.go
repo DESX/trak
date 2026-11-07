@@ -49,11 +49,13 @@ func TestNavigationBounds(t *testing.T) {
 	for _, s := range r.Types() {
 		tab := must(r.Table(s.Name))
 		clear(r.cache)
+		clear(r.oldCache)
 		clear(r.latest)
 		if got := reads(func() { must(tab.Count()) }); got > 2*k+4 {
 			t.Errorf("%s: count read %d footers", s.Name, got)
 		}
 		clear(r.cache)
+		clear(r.oldCache)
 		clear(r.latest)
 		if got := reads(func() { must(tab.Latest()) }); got > 2*k+4 {
 			t.Errorf("%s: latest read %d footers", s.Name, got)
@@ -66,6 +68,7 @@ func TestNavigationBounds(t *testing.T) {
 				continue
 			}
 			clear(r.cache)
+			clear(r.oldCache)
 			if got := reads(func() { must(tab.Get(m)) }); got > bound {
 				t.Errorf("%s: get(%d) read %d footers, bound %d", s.Name, m, got, bound)
 			}

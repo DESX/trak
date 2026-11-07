@@ -23,6 +23,7 @@ type footer struct {
 	num    uint64 // schema: type index; event: n
 	stamp  string // schema: version; event: timestamp
 	vlqs   []uint64
+	inline [16]uint64 // backing for vlqs when they fit, saving an allocation
 }
 
 func (f *footer) node() uint64 {
@@ -76,8 +77,10 @@ func isVersion(b []byte) bool {
 	return true
 }
 
-// parseFooter parses buf[fstart:end] (including its LF).
-func parseFooter(buf []byte, fstart, end, minStart int64) (*footer, error) {
+// parseFooter parses buf[fstart:end] (including its LF). intern, when not
+// nil, turns the type name into a string without allocating for names it
+// has seen.
+func parseFooter(buf []byte, fstart, end, minStart int64, intern func([]byte) string) (*footer, error) {
 	line := buf[fstart : end-1]
 	f := &footer{fstart: fstart, end: end}
 	var close []byte
@@ -94,15 +97,29 @@ func parseFooter(buf []byte, fstart, end, minStart int64) (*footer, error) {
 		return nil, formatErr(fstart, "footer has no closing marker")
 	}
 	k += 4
-	parts := bytes.Split(line[4:k], []byte(" "))
-	if len(parts) != 3 || len(parts[0]) == 0 || len(parts[1]) == 0 || len(parts[2]) == 0 {
-		return nil, formatErr(fstart+4, "footer needs exactly three fields")
+	var parts [3][]byte
+	fields := line[4:k]
+	for i := 0; i < 3; i++ {
+		sp := bytes.IndexByte(fields, ' ')
+		if i < 2 && sp < 0 || i == 2 && sp >= 0 {
+			return nil, formatErr(fstart+4, "footer needs exactly three fields")
+		}
+		if sp < 0 {
+			sp = len(fields)
+		}
+		parts[i] = fields[:sp]
+		if len(parts[i]) == 0 {
+			return nil, formatErr(fstart+4, "footer needs exactly three fields")
+		}
+		if i < 2 {
+			fields = fields[sp+1:]
+		}
 	}
 	letters := line[k+4:]
 	if len(letters) == 0 {
 		return nil, formatErr(fstart+int64(k)+4, "footer has no VLQs")
 	}
-	vlqs, err := DecodeVLQs(letters, fstart+int64(k)+4)
+	vlqs, err := appendVLQs(f.inline[:0], letters, fstart+int64(k)+4)
 	if err != nil {
 		return nil, err
 	}
@@ -112,7 +129,11 @@ func parseFooter(buf []byte, fstart, end, minStart int64) (*footer, error) {
 			return nil, formatErr(fstart+4, "type name is not ASCII")
 		}
 	}
-	f.name = string(parts[0])
+	if intern != nil {
+		f.name = intern(parts[0])
+	} else {
+		f.name = string(parts[0])
+	}
 	if !isDecimal(parts[1]) {
 		return nil, formatErr(fstart+5+int64(len(parts[0])), "bad decimal number in footer")
 	}
@@ -158,7 +179,7 @@ func appendSchemaFooter(dst []byte, name string, index int, version string, vlqs
 	return append(dst, '\n')
 }
 
-func appendEventFooter(dst []byte, name string, n uint64, stamp string, vlqs []uint64) []byte {
+func appendEventFooter(dst []byte, name string, n uint64, stamp []byte, vlqs []uint64) []byte {
 	dst = append(dst, eventOpen...)
 	dst = append(dst, name...)
 	dst = append(dst, ' ')

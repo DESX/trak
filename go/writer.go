@@ -48,6 +48,8 @@ type Writer struct {
 	cov           []int64
 	seq           int64
 	buf           []byte
+	enc           encoder
+	stamp         []byte
 	now           func() time.Time
 }
 
@@ -221,10 +223,10 @@ func (w *Writer) write(typ string, value any, ts time.Time, explicit bool) (int6
 			ms = t.lastMs
 		}
 	}
-	body, values, err := encodeValue(t.schema.Root, value)
-	if err != nil {
+	if err := w.enc.encode(t.schema.Root, value); err != nil {
 		return 0, err
 	}
+	body, values := w.enc.body, w.enc.vals
 	n := t.n + 1
 	j := Jump(n)
 	start := w.offset
@@ -253,7 +255,8 @@ func (w *Writer) write(typ string, value any, ts time.Time, explicit bool) (int6
 		uint64(start-dirEnd+1), uint64(best), 0)
 	vlqs = append(vlqs, values...)
 	obj := append(w.buf[:0], body...)
-	obj = appendEventFooter(obj, typ, n, FormatTimestamp(fromMillis(ms)), vlqs)
+	w.stamp = appendStamp(w.stamp[:0], ms)
+	obj = appendEventFooter(obj, typ, n, w.stamp, vlqs)
 	w.buf = obj
 	if err := w.writeObject(obj); err != nil {
 		return 0, err
