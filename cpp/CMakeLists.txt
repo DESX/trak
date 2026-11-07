@@ -69,11 +69,15 @@ if(TRAK_BUILD_TESTS)
     tests/core_test.cpp
     tests/schema_test.cpp
     tests/rw_test.cpp
-    tests/conformance_test.cpp)
+    tests/conformance_test.cpp
+    tests/vectors.cpp)
   target_link_libraries(trak_tests PRIVATE trak::trak GTest::gtest_main nlohmann_json::nlohmann_json)
   target_compile_definitions(trak_tests PRIVATE
     TRAK_REPO_DIR="${CMAKE_CURRENT_SOURCE_DIR}/..")
   trak_warnings(trak_tests)
+  add_executable(trak_interop tests/interop.cpp tests/vectors.cpp)
+  target_link_libraries(trak_interop PRIVATE trak::trak nlohmann_json::nlohmann_json)
+  trak_warnings(trak_interop)
   include(GoogleTest)
   gtest_discover_tests(trak_tests DISCOVERY_TIMEOUT 60)
 endif()
