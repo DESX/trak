@@ -157,3 +157,9 @@ def test_errors(text: str, message: str, line: int, column: int) -> None:
 def test_top_level_annotation_only() -> None:
     root, desc = parse_definition("{}")
     assert root.members == [] and desc is None
+
+
+def test_empty_comment_is_no_description() -> None:
+    s = build_schema("t", 1, "1.0", "//\n{ a: str, //   \n}\n", strict=True)
+    assert s.description is None
+    assert s.field("a").description is None

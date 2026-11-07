@@ -82,7 +82,7 @@ any of them without a spec change.
 | # | Topic | Choice |
 |---|---|---|
 | I1 | Field paths in schema APIs | List indexes are written `[]` and map keys `{}`, e.g. `jobs.[].env.{}`. |
-| I2 | A leaf's description and annotations | They come from the leaf's own field (the nearest enclosing object member). Annotations on the types between that member and the leaf are listed outermost first. Annotations on the top-level object are exposed on the schema. |
+| I2 | A leaf's description and annotations | A description that is empty after stripping `//` and whitespace counts as no description. Leaf descriptions and annotations come from the leaf's own field (the nearest enclosing object member). Annotations on the types between that member and the leaf are listed outermost first. Annotations on the top-level object are exposed on the schema. |
 | I3 | A leaf's `optional` flag | True when any type from the root down to the leaf is optional, i.e. the column can be empty. |
 | I4 | Unknown leaves when writing | `define` rejects them, because a 1.0 writer declares `1.0` in the schema footer. Readers accept them as `str` (§9). |
 | I5 | Schema versions | A schema footer whose major isn't 1 makes that schema unparseable: the type still navigates, but its values are unavailable. `check` parses a `1.0` schema strictly and a newer minor leniently. |

@@ -257,7 +257,7 @@ class _Parser:
         if self.i != len(self.s):
             self.fail("unexpected text after the definition")
         lines = [text for pos, (_, _, text) in sorted(self.comments.items()) if pos < brace]
-        description = "\n".join(lines) if lines else None
+        description = "\n".join(lines) or None
         by_line: dict[int, Member] = {}
         for m in self.members:
             prev = by_line.get(m.line)
@@ -265,7 +265,7 @@ class _Parser:
                 by_line[m.line] = m
         for pos, (line, alone, text) in sorted(self.comments.items()):
             if pos > brace and not alone and line in by_line:
-                by_line[line].description = text
+                by_line[line].description = text or None
         return root, description
 
     def parse_object(self) -> Object:
