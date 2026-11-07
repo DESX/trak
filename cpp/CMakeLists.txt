@@ -1,0 +1,55 @@
+cmake_minimum_required(VERSION 3.20)
+project(trak VERSION 1.0.0 LANGUAGES CXX)
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+
+option(TRAK_BUILD_TESTS "Build trak tests" ${PROJECT_IS_TOP_LEVEL})
+option(TRAK_WERROR "Treat warnings as errors" OFF)
+option(TRAK_SANITIZE "Build with ASan and UBSan" OFF)
+
+add_library(trak src/version.cpp)
+add_library(trak::trak ALIAS trak)
+target_include_directories(trak PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>)
+target_compile_features(trak PUBLIC cxx_std_17)
+
+function(trak_warnings target)
+  if(MSVC)
+    target_compile_options(${target} PRIVATE /W4 /permissive-)
+    if(TRAK_WERROR)
+      target_compile_options(${target} PRIVATE /WX)
+    endif()
+  else()
+    target_compile_options(${target} PRIVATE -Wall -Wextra -Wpedantic)
+    if(TRAK_WERROR)
+      target_compile_options(${target} PRIVATE -Werror)
+    endif()
+  endif()
+endfunction()
+trak_warnings(trak)
+
+if(TRAK_SANITIZE AND NOT MSVC)
+  add_compile_options(-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all)
+  add_link_options(-fsanitize=address,undefined)
+  target_compile_options(trak PRIVATE -fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all)
+  target_link_options(trak PUBLIC -fsanitize=address,undefined)
+endif()
+
+if(TRAK_BUILD_TESTS)
+  include(FetchContent)
+  FetchContent_Declare(googletest
+    URL https://github.com/google/googletest/archive/refs/tags/v1.15.2.tar.gz
+    DOWNLOAD_EXTRACT_TIMESTAMP TRUE)
+  set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+  set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
+  FetchContent_MakeAvailable(googletest)
+  enable_testing()
+  add_executable(trak_tests tests/version_test.cpp)
+  target_link_libraries(trak_tests PRIVATE trak::trak GTest::gtest_main)
+  trak_warnings(trak_tests)
+  include(GoogleTest)
+  gtest_discover_tests(trak_tests)
+endif()
