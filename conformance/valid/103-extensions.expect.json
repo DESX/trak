@@ -1,0 +1,59 @@
+{
+"types": [
+  {
+    "name": "t",
+    "index": 1,
+    "version": "1.0",
+    "description": null,
+    "parsed": true,
+    "annotations": [],
+    "fields": [
+      {
+        "path": "a",
+        "type": "str",
+        "enum": [],
+        "unknown": null,
+        "block": false,
+        "optional": false,
+        "annotations": [],
+        "description": null
+      },
+      {
+        "path": "b",
+        "type": "num",
+        "enum": [],
+        "unknown": null,
+        "block": false,
+        "optional": false,
+        "annotations": [],
+        "description": null
+      }
+    ]
+  },
+  {
+    "name": "u",
+    "index": 2,
+    "version": "1.0",
+    "description": null,
+    "parsed": true,
+    "annotations": [],
+    "fields": [
+      {
+        "path": "c",
+        "type": "str",
+        "enum": [],
+        "unknown": null,
+        "block": false,
+        "optional": false,
+        "annotations": [],
+        "description": null
+      }
+    ]
+  }
+],
+"events": [
+{"type": "t", "n": 1, "timestamp": "20261107T140210.120Z", "value": {"a": "x", "b": "1"}},
+{"type": "u", "n": 1, "timestamp": "20261107T140210.120Z", "value": {"c": "y"}},
+{"type": "t", "n": 2, "timestamp": "20261107T140322.415Z", "value": {"a": "zz", "b": "22"}}
+]
+}

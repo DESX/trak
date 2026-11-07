@@ -1,0 +1,15 @@
+trak 1.0
+{
+  level: enum(debug, info, warn, error,) @color,
+  size: num @unit(bytes) @x.y-z(a b, c),
+  ids: [] str @uuid,
+}
+##[ t 1 1.0 ]##eLAA
+level: warn
+size: 1024
+ids.0: a
+ids.1: b
+==[ t 1 20261106T212000.001Z ]==bPBBBAAEECBB
+level: debug
+size: 0
+==[ t 2 20261106T212000.002Z ]==VBBdJAAFBA

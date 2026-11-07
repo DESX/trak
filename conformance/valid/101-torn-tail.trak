@@ -1,0 +1,38 @@
+trak 1.0
+// One CI build run.
+{
+  user: str,                  // who triggered the build
+  status: enum(ok, failed),
+  duration: num @ms,          // wall-clock time
+  tags: [] str,
+  stdout: |str @log,          // compiler output
+  error: str?,                // set when the build failed
+}
+##[ build 1 1.0 ]##kXAA
+// A release pushed to an environment.
+{
+  target: str,
+  version: str @semver,
+}
+##[ deploy 2 1.0 ]##dEBA
+user: ana
+status: ok
+duration: 910
+tags.0: ci
+Compiling core...
+Done.
+--[ stdout ]--
+==[ build 1 20261107T140210.120Z ]==dHeEeEBAADCDBCXA
+user: joel
+status: failed
+duration: 1520
+tags.0: ci
+tags.1: nightly
+Compiling core...
+ld: undefined symbol main
+--[ stdout ]--
+error: link failed
+==[ build 2 20261107T140322.415Z ]==fQBBfJCAEGECCHbRBL
+user: ana
+status: ok
+duration: 9

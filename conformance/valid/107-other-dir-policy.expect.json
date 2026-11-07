@@ -1,0 +1,106 @@
+{
+"types": [
+  {
+    "name": "a",
+    "index": 1,
+    "version": "1.0",
+    "description": null,
+    "parsed": true,
+    "annotations": [],
+    "fields": [
+      {
+        "path": "i",
+        "type": "num",
+        "enum": [],
+        "unknown": null,
+        "block": false,
+        "optional": false,
+        "annotations": [],
+        "description": null
+      }
+    ]
+  },
+  {
+    "name": "b",
+    "index": 2,
+    "version": "1.0",
+    "description": null,
+    "parsed": true,
+    "annotations": [],
+    "fields": [
+      {
+        "path": "i",
+        "type": "num",
+        "enum": [],
+        "unknown": null,
+        "block": false,
+        "optional": false,
+        "annotations": [],
+        "description": null
+      }
+    ]
+  },
+  {
+    "name": "c",
+    "index": 3,
+    "version": "1.0",
+    "description": null,
+    "parsed": true,
+    "annotations": [],
+    "fields": [
+      {
+        "path": "i",
+        "type": "num",
+        "enum": [],
+        "unknown": null,
+        "block": false,
+        "optional": false,
+        "annotations": [],
+        "description": null
+      }
+    ]
+  }
+],
+"events": [
+{"type": "a", "n": 1, "timestamp": "20261107T140210.120Z", "value": {"i": "0"}},
+{"type": "b", "n": 1, "timestamp": "20261107T140210.120Z", "value": {"i": "1"}},
+{"type": "c", "n": 1, "timestamp": "20261107T140210.120Z", "value": {"i": "2"}},
+{"type": "a", "n": 2, "timestamp": "20261107T140210.120Z", "value": {"i": "3"}},
+{"type": "b", "n": 2, "timestamp": "20261107T140210.120Z", "value": {"i": "4"}},
+{"type": "c", "n": 2, "timestamp": "20261107T140210.120Z", "value": {"i": "5"}},
+{"type": "a", "n": 3, "timestamp": "20261107T140210.120Z", "value": {"i": "6"}},
+{"type": "b", "n": 3, "timestamp": "20261107T140210.120Z", "value": {"i": "7"}},
+{"type": "c", "n": 3, "timestamp": "20261107T140210.120Z", "value": {"i": "8"}},
+{"type": "a", "n": 4, "timestamp": "20261107T140210.120Z", "value": {"i": "9"}},
+{"type": "b", "n": 4, "timestamp": "20261107T140210.120Z", "value": {"i": "10"}},
+{"type": "c", "n": 4, "timestamp": "20261107T140210.120Z", "value": {"i": "11"}},
+{"type": "a", "n": 5, "timestamp": "20261107T140210.120Z", "value": {"i": "12"}},
+{"type": "b", "n": 5, "timestamp": "20261107T140210.120Z", "value": {"i": "13"}},
+{"type": "c", "n": 5, "timestamp": "20261107T140210.120Z", "value": {"i": "14"}},
+{"type": "a", "n": 6, "timestamp": "20261107T140210.120Z", "value": {"i": "15"}},
+{"type": "b", "n": 6, "timestamp": "20261107T140210.120Z", "value": {"i": "16"}},
+{"type": "c", "n": 6, "timestamp": "20261107T140210.120Z", "value": {"i": "17"}},
+{"type": "a", "n": 7, "timestamp": "20261107T140210.120Z", "value": {"i": "18"}},
+{"type": "b", "n": 7, "timestamp": "20261107T140210.120Z", "value": {"i": "19"}},
+{"type": "c", "n": 7, "timestamp": "20261107T140210.120Z", "value": {"i": "20"}},
+{"type": "a", "n": 8, "timestamp": "20261107T140210.120Z", "value": {"i": "21"}},
+{"type": "b", "n": 8, "timestamp": "20261107T140210.120Z", "value": {"i": "22"}},
+{"type": "c", "n": 8, "timestamp": "20261107T140210.120Z", "value": {"i": "23"}},
+{"type": "a", "n": 9, "timestamp": "20261107T140210.120Z", "value": {"i": "24"}},
+{"type": "b", "n": 9, "timestamp": "20261107T140210.120Z", "value": {"i": "25"}},
+{"type": "c", "n": 9, "timestamp": "20261107T140210.120Z", "value": {"i": "26"}},
+{"type": "a", "n": 10, "timestamp": "20261107T140210.120Z", "value": {"i": "27"}},
+{"type": "b", "n": 10, "timestamp": "20261107T140210.120Z", "value": {"i": "28"}},
+{"type": "c", "n": 10, "timestamp": "20261107T140210.120Z", "value": {"i": "29"}},
+{"type": "a", "n": 11, "timestamp": "20261107T140210.120Z", "value": {"i": "30"}},
+{"type": "a", "n": 12, "timestamp": "20261107T140210.120Z", "value": {"i": "31"}},
+{"type": "a", "n": 13, "timestamp": "20261107T140210.120Z", "value": {"i": "32"}},
+{"type": "a", "n": 14, "timestamp": "20261107T140210.120Z", "value": {"i": "33"}},
+{"type": "a", "n": 15, "timestamp": "20261107T140210.120Z", "value": {"i": "34"}},
+{"type": "a", "n": 16, "timestamp": "20261107T140210.120Z", "value": {"i": "35"}},
+{"type": "a", "n": 17, "timestamp": "20261107T140210.120Z", "value": {"i": "36"}},
+{"type": "a", "n": 18, "timestamp": "20261107T140210.120Z", "value": {"i": "37"}},
+{"type": "a", "n": 19, "timestamp": "20261107T140210.120Z", "value": {"i": "38"}},
+{"type": "a", "n": 20, "timestamp": "20261107T140210.120Z", "value": {"i": "39"}}
+]
+}

@@ -1,0 +1,49 @@
+{
+"types": [
+  {
+    "name": "a",
+    "index": 1,
+    "version": "1.0",
+    "description": null,
+    "parsed": true,
+    "annotations": [],
+    "fields": [
+      {
+        "path": "i",
+        "type": "num",
+        "enum": [],
+        "unknown": null,
+        "block": false,
+        "optional": false,
+        "annotations": [],
+        "description": null
+      }
+    ]
+  },
+  {
+    "name": "b",
+    "index": 2,
+    "version": "1.0",
+    "description": null,
+    "parsed": true,
+    "annotations": [],
+    "fields": [
+      {
+        "path": "i",
+        "type": "num",
+        "enum": [],
+        "unknown": null,
+        "block": false,
+        "optional": false,
+        "annotations": [],
+        "description": null
+      }
+    ]
+  }
+],
+"events": [
+{"type": "b", "n": 1, "timestamp": "20261107T140210.120Z", "value": {"i": "0"}},
+{"type": "a", "n": 1, "timestamp": "20261107T140210.120Z", "value": {"i": "1"}},
+{"type": "a", "n": 2, "timestamp": "20261107T140210.120Z", "value": {"i": "2"}}
+]
+}

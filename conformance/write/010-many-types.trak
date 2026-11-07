@@ -1,0 +1,184 @@
+trak 1.0
+// Type number 1.
+{ i: num }
+##[ type01 1 1.0 ]##bDAA
+// Type number 2.
+{ i: num }
+##[ type02 2 1.0 ]##bDBA
+// Type number 3.
+{ i: num }
+##[ type03 3 1.0 ]##bDBA
+// Type number 4.
+{ i: num }
+##[ type04 4 1.0 ]##bDBA
+// Type number 5.
+{ i: num }
+##[ type05 5 1.0 ]##bDBA
+// Type number 6.
+{ i: num }
+##[ type06 6 1.0 ]##bDBA
+// Type number 7.
+{ i: num }
+##[ type07 7 1.0 ]##bDBA
+// Type number 8.
+{ i: num }
+##[ type08 8 1.0 ]##bDBA
+// Type number 9.
+{ i: num }
+##[ type09 9 1.0 ]##bDBA
+// Type number 10.
+{ i: num }
+##[ type10 10 1.0 ]##bEBA
+// Type number 11.
+{ i: num }
+##[ type11 11 1.0 ]##bEBA
+// Type number 12.
+{ i: num }
+##[ type12 12 1.0 ]##bEBA
+// Type number 13.
+{ i: num }
+##[ type13 13 1.0 ]##bEBA
+// Type number 14.
+{ i: num }
+##[ type14 14 1.0 ]##bEBA
+// Type number 15.
+{ i: num }
+##[ type15 15 1.0 ]##bEBA
+// Type number 16.
+{ i: num }
+##[ type16 16 1.0 ]##bEBA
+// Type number 17.
+{ i: num }
+##[ type17 17 1.0 ]##bEBA
+// Type number 18.
+{ i: num }
+##[ type18 18 1.0 ]##bEBA
+// Type number 19.
+{ i: num }
+##[ type19 19 1.0 ]##bEBA
+// Type number 20.
+{ i: num }
+##[ type20 20 1.0 ]##bEBA
+// Type number 21.
+{ i: num }
+##[ type21 21 1.0 ]##bEBA
+// Type number 22.
+{ i: num }
+##[ type22 22 1.0 ]##bEBA
+// Type number 23.
+{ i: num }
+##[ type23 23 1.0 ]##bEBA
+// Type number 24.
+{ i: num }
+##[ type24 24 1.0 ]##bEBA
+// Type number 25.
+{ i: num }
+##[ type25 25 1.0 ]##bEBA
+// Type number 26.
+{ i: num }
+##[ type26 26 1.0 ]##bEBA
+// Type number 27.
+{ i: num }
+##[ type27 27 1.0 ]##bEBA
+// Type number 28.
+{ i: num }
+##[ type28 28 1.0 ]##bEBA
+// Type number 29.
+{ i: num }
+##[ type29 29 1.0 ]##bEBA
+// Type number 30.
+{ i: num }
+##[ type30 30 1.0 ]##bEBA
+// Type number 31.
+{ i: num }
+##[ type31 31 1.0 ]##bEBA
+// Type number 32.
+{ i: num }
+##[ type32 32 1.0 ]##bEBA
+// Type number 33.
+{ i: num }
+##[ type33 33 1.0 ]##bEBA
+// Type number 34.
+{ i: num }
+##[ type34 34 1.0 ]##bEBA
+// Type number 35.
+{ i: num }
+##[ type35 35 1.0 ]##bEBA
+i: 1
+==[ type01 1 20261106T212000.001Z ]==FcuRcuRBAAB
+i: 3
+==[ type03 1 20261106T212000.002Z ]==FcsPcsPcuRCAB
+i: 5
+==[ type05 1 20261106T212000.003Z ]==FcqPcqPcsREAB
+i: 7
+==[ type07 1 20261106T212000.004Z ]==FcoPcoPcqRGAB
+i: 9
+==[ type09 1 20261106T212000.005Z ]==FcmPcmPcoRIAB
+i: 11
+==[ type11 1 20261106T212000.006Z ]==GckLckLcmPKAC
+i: 13
+==[ type13 1 20261106T212000.007Z ]==GciIciIckMMAC
+i: 15
+==[ type15 1 20261106T212000.008Z ]==GcgFcgFciJOAC
+i: 17
+==[ type17 1 20261106T212000.009Z ]==GceCceCcgGQAC
+i: 19
+==[ type19 1 20261106T212000.010Z ]==GcbZcbZceDSAC
+i: 21
+==[ type21 1 20261106T212000.011Z ]==GbzWbzWccAUAC
+i: 23
+==[ type23 1 20261106T212000.012Z ]==GbxTbxTbzXWAC
+i: 25
+==[ type25 1 20261106T212000.013Z ]==GbvQbvQbxUYAC
+i: 27
+==[ type27 1 20261106T212000.014Z ]==GbtNbtNbvRbAAC
+i: 29
+==[ type29 1 20261106T212000.015Z ]==GbrLbrLbtPbCAC
+i: 31
+==[ type31 1 20261106T212000.016Z ]==GbpJbpJbrNbEAC
+i: 33
+==[ type33 1 20261106T212000.017Z ]==GbnHbnHbpLbGAC
+i: 35
+==[ type35 1 20261106T212000.018Z ]==GblFblFbnJbIAC
+i: 1
+==[ type01 2 20261106T212000.019Z ]==FblJblJbnLAAB
+i: 4
+==[ type04 1 20261106T212000.020Z ]==FedZedZeiDCAB
+i: 7
+==[ type07 2 20261106T212000.021Z ]==FbjFbjFbnNDAB
+i: 10
+==[ type10 1 20261106T212000.022Z ]==GdvTdvTbnNFAC
+i: 13
+==[ type13 2 20261106T212000.023Z ]==GbhAbhAegIGAC
+i: 16
+==[ type16 1 20261106T212000.024Z ]==GdnFdnFeeJIAC
+i: 19
+==[ type19 2 20261106T212000.025Z ]==GbeVbeVbpUJAC
+i: 22
+==[ type22 1 20261106T212000.026Z ]==GdeRdeRbpULAC
+i: 25
+==[ type25 2 20261106T212000.027Z ]==GbcQbcQecKMAC
+i: 28
+==[ type28 1 20261106T212000.028Z ]==GcwDcwDeaHOAC
+i: 31
+==[ type31 2 20261106T212000.029Z ]==GbaIbaIbrZPAC
+i: 34
+==[ type34 1 20261106T212000.030Z ]==GcnPcnPbrZRAC
+i: 1
+==[ type01 3 20261106T212000.031Z ]==FyCfiGdyGSAB
+i: 5
+==[ type05 2 20261106T212000.032Z ]==FcjJcjJdwBUAB
+i: 9
+==[ type09 2 20261106T212000.033Z ]==FchFchFbuBVAB
+i: 13
+==[ type13 3 20261106T212000.034Z ]==GvVepLbuAXAC
+i: 17
+==[ type17 2 20261106T212000.035Z ]==GccTccTdtXYAC
+i: 21
+==[ type21 2 20261106T212000.036Z ]==GcaOcaOdrUbAAC
+i: 25
+==[ type25 3 20261106T212000.037Z ]==GtQdwEbwEbBAC
+i: 29
+==[ type29 2 20261106T212000.038Z ]==GbwDbwDdnPbEAC
+i: 33
+==[ type33 2 20261106T212000.039Z ]==GbtXbtXdlNbGAC

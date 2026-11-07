@@ -1,0 +1,2 @@
+value lengths walk one byte past the footer start
+offset: 53

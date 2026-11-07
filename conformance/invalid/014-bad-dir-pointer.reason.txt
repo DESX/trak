@@ -1,0 +1,2 @@
+dir pointer for type b lands on an event of type a
+offset: 94

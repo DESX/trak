@@ -1,0 +1,6 @@
+[
+{"op": "define", "name": "build", "schema": "// One CI build run.\n{\n  user: str,                  // who triggered the build\n  status: enum(ok, failed),\n  duration: num @ms,          // wall-clock time\n  tags: [] str,\n  stdout: |str @log,          // compiler output\n  error: str?,                // set when the build failed\n}\n"},
+{"op": "define", "name": "deploy", "schema": "// A release pushed to an environment.\n{\n  target: str,\n  version: str @semver,\n}\n"},
+{"op": "write", "type": "build", "value": {"user": "ana", "status": "ok", "duration": 910, "tags": ["ci"], "stdout": "Compiling core...\nDone.", "error": null}, "timestamp": "20261107T140210.120Z"},
+{"op": "write", "type": "build", "value": {"user": "joel", "status": "failed", "duration": 1520, "tags": ["ci", "nightly"], "stdout": "Compiling core...\nld: undefined symbol main", "error": "link failed"}, "timestamp": "20261107T140322.415Z"}
+]

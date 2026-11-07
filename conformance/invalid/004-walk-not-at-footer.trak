@@ -1,0 +1,9 @@
+trak 1.0
+{ a: str, b: str }
+##[ t 1 1.0 ]##TAA
+a: xy
+b: z
+==[ t 1 20261107T140210.120Z ]==LBBBAACC
+{ }
+##[ zz 2 1.0 ]##EcBA
+==[ zz 1 20261107T140322.415Z ]==ABBBAA

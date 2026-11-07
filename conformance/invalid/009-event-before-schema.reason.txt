@@ -1,0 +1,2 @@
+event of type q appears before any schema q
+offset: 32

@@ -1,0 +1,4 @@
+[
+{"op": "define", "name": "t", "schema": "{ m: {} [] str, n: {} str? }\n"},
+{"op": "write", "type": "t", "value": {"m": [["empty", []], ["full", ["x"]], ["also empty", []]], "n": null}, "timestamp": "20261106T212000.001Z"}
+]

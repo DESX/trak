@@ -1,0 +1,112 @@
+{
+"types": [
+  {
+    "name": "a",
+    "index": 1,
+    "version": "1.0",
+    "description": null,
+    "parsed": true,
+    "annotations": [],
+    "fields": [
+      {
+        "path": "v",
+        "type": "str",
+        "enum": [],
+        "unknown": null,
+        "block": false,
+        "optional": false,
+        "annotations": [],
+        "description": null
+      }
+    ]
+  },
+  {
+    "name": "b",
+    "index": 2,
+    "version": "1.0",
+    "description": null,
+    "parsed": true,
+    "annotations": [],
+    "fields": [
+      {
+        "path": "v",
+        "type": "str",
+        "enum": [],
+        "unknown": null,
+        "block": false,
+        "optional": false,
+        "annotations": [],
+        "description": null
+      }
+    ]
+  },
+  {
+    "name": "c",
+    "index": 3,
+    "version": "1.0",
+    "description": null,
+    "parsed": true,
+    "annotations": [],
+    "fields": [
+      {
+        "path": "v",
+        "type": "str",
+        "enum": [],
+        "unknown": null,
+        "block": false,
+        "optional": false,
+        "annotations": [],
+        "description": null
+      }
+    ]
+  },
+  {
+    "name": "d",
+    "index": 4,
+    "version": "1.0",
+    "description": null,
+    "parsed": true,
+    "annotations": [],
+    "fields": [
+      {
+        "path": "v",
+        "type": "str",
+        "enum": [],
+        "unknown": null,
+        "block": false,
+        "optional": false,
+        "annotations": [],
+        "description": null
+      }
+    ]
+  }
+],
+"events": [
+{"type": "a", "n": 1, "timestamp": "20261106T212000.001Z", "value": {"v": "a0"}},
+{"type": "a", "n": 2, "timestamp": "20261106T212000.002Z", "value": {"v": "a1"}},
+{"type": "b", "n": 1, "timestamp": "20261106T212000.003Z", "value": {"v": "b2"}},
+{"type": "a", "n": 3, "timestamp": "20261106T212000.004Z", "value": {"v": "a3"}},
+{"type": "b", "n": 2, "timestamp": "20261106T212000.005Z", "value": {"v": "b4"}},
+{"type": "c", "n": 1, "timestamp": "20261106T212000.006Z", "value": {"v": "c5"}},
+{"type": "a", "n": 4, "timestamp": "20261106T212000.007Z", "value": {"v": "a6"}},
+{"type": "b", "n": 3, "timestamp": "20261106T212000.008Z", "value": {"v": "b7"}},
+{"type": "c", "n": 2, "timestamp": "20261106T212000.009Z", "value": {"v": "c8"}},
+{"type": "d", "n": 1, "timestamp": "20261106T212000.010Z", "value": {"v": "d9"}},
+{"type": "a", "n": 5, "timestamp": "20261106T212000.011Z", "value": {"v": "a10"}},
+{"type": "a", "n": 6, "timestamp": "20261106T212000.012Z", "value": {"v": "a11"}},
+{"type": "a", "n": 7, "timestamp": "20261106T212000.013Z", "value": {"v": "a12"}},
+{"type": "a", "n": 8, "timestamp": "20261106T212000.014Z", "value": {"v": "a13"}},
+{"type": "d", "n": 2, "timestamp": "20261106T212000.015Z", "value": {"v": "d14"}},
+{"type": "d", "n": 3, "timestamp": "20261106T212000.016Z", "value": {"v": "d15"}},
+{"type": "d", "n": 4, "timestamp": "20261106T212000.017Z", "value": {"v": "d16"}},
+{"type": "d", "n": 5, "timestamp": "20261106T212000.018Z", "value": {"v": "d17"}},
+{"type": "b", "n": 4, "timestamp": "20261106T212000.019Z", "value": {"v": "b18"}},
+{"type": "c", "n": 3, "timestamp": "20261106T212000.020Z", "value": {"v": "c19"}},
+{"type": "b", "n": 5, "timestamp": "20261106T212000.021Z", "value": {"v": "b20"}},
+{"type": "c", "n": 4, "timestamp": "20261106T212000.022Z", "value": {"v": "c21"}},
+{"type": "b", "n": 6, "timestamp": "20261106T212000.023Z", "value": {"v": "b22"}},
+{"type": "c", "n": 5, "timestamp": "20261106T212000.024Z", "value": {"v": "c23"}},
+{"type": "a", "n": 9, "timestamp": "20261106T212000.025Z", "value": {"v": "a24"}},
+{"type": "b", "n": 7, "timestamp": "20261106T212000.026Z", "value": {"v": "b25"}}
+]
+}

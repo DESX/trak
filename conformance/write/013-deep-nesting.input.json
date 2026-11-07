@@ -1,0 +1,4 @@
+[
+{"op": "define", "name": "t", "schema": "{\n  jobs: [] {\n    name: str,\n    env: {} str,\n    steps: [] { cmd: str, out: |str?, meta: {} [] num },\n  },\n}\n"},
+{"op": "write", "type": "t", "value": {"jobs": [{"name": "build", "env": [["CC", "gcc"], ["CFLAGS", "-O2"]], "steps": [{"cmd": "make", "out": "ok\n", "meta": [["t", [1, 2]], ["e", []]]}, {"cmd": "test", "out": null, "meta": []}]}, {"name": "lint", "env": [], "steps": []}]}, "timestamp": "20261106T212000.001Z"}
+]

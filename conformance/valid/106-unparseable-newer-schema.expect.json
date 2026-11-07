@@ -1,0 +1,38 @@
+{
+"types": [
+  {
+    "name": "ok",
+    "index": 1,
+    "version": "1.0",
+    "description": null,
+    "parsed": true,
+    "annotations": [],
+    "fields": [
+      {
+        "path": "a",
+        "type": "str",
+        "enum": [],
+        "unknown": null,
+        "block": false,
+        "optional": false,
+        "annotations": [],
+        "description": null
+      }
+    ]
+  },
+  {
+    "name": "future",
+    "index": 2,
+    "version": "1.4",
+    "description": null,
+    "parsed": false,
+    "annotations": [],
+    "fields": []
+  }
+],
+"events": [
+{"type": "future", "n": 1, "timestamp": "20261107T140210.120Z", "value": null},
+{"type": "ok", "n": 1, "timestamp": "20261107T140210.120Z", "value": {"a": "y"}},
+{"type": "future", "n": 2, "timestamp": "20261107T140322.415Z", "value": null}
+]
+}

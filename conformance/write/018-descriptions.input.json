@@ -1,0 +1,4 @@
+[
+{"op": "define", "name": "t", "schema": "// First line of the type description.\n//   Second line, indented.\n\n{\n  a: str, b: str,          // describes b, the last key on the line\n  // a standalone comment describes nothing\n  c: {                     // describes c\n    d: [] str,             // describes d\n  },\n}\n// trailing comment\n"},
+{"op": "write", "type": "t", "value": {"a": "1", "b": "2", "c": {"d": ["3"]}}, "timestamp": "20261106T212000.001Z"}
+]

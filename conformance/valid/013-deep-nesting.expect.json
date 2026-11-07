@@ -1,0 +1,67 @@
+{
+"types": [
+  {
+    "name": "t",
+    "index": 1,
+    "version": "1.0",
+    "description": null,
+    "parsed": true,
+    "annotations": [],
+    "fields": [
+      {
+        "path": "jobs.[].name",
+        "type": "str",
+        "enum": [],
+        "unknown": null,
+        "block": false,
+        "optional": false,
+        "annotations": [],
+        "description": null
+      },
+      {
+        "path": "jobs.[].env.{}",
+        "type": "str",
+        "enum": [],
+        "unknown": null,
+        "block": false,
+        "optional": false,
+        "annotations": [],
+        "description": null
+      },
+      {
+        "path": "jobs.[].steps.[].cmd",
+        "type": "str",
+        "enum": [],
+        "unknown": null,
+        "block": false,
+        "optional": false,
+        "annotations": [],
+        "description": null
+      },
+      {
+        "path": "jobs.[].steps.[].out",
+        "type": "str",
+        "enum": [],
+        "unknown": null,
+        "block": true,
+        "optional": true,
+        "annotations": [],
+        "description": null
+      },
+      {
+        "path": "jobs.[].steps.[].meta.{}.[]",
+        "type": "num",
+        "enum": [],
+        "unknown": null,
+        "block": false,
+        "optional": false,
+        "annotations": [],
+        "description": null
+      }
+    ]
+  }
+],
+"events": [
+{"type": "t", "n": 1, "timestamp": "20261106T212000.001Z", "value": {"jobs": [{"name": "build", "env": [["CC", "gcc"], ["CFLAGS", "-O2"]], "steps": [{"cmd": "make", "out": "ok\n", "meta": [["t", ["1", "2"]], [null, []]]}, {"cmd": "test", "out": null, "meta": []}]}, {"name": "lint", "env": [], "steps": []}]}}
+]
+}

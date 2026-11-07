@@ -1,0 +1,6 @@
+[
+{"op": "define", "name": "idle", "schema": "// Never written.\n{ a: str }\n"},
+{"op": "define", "name": "busy", "schema": "{ a: str }\n"},
+{"op": "write", "type": "busy", "value": {"a": "x"}, "timestamp": "20261106T212000.001Z"},
+{"op": "write", "type": "busy", "value": {"a": "y"}, "timestamp": "20261106T212000.002Z"}
+]

@@ -1,0 +1,58 @@
+{
+"types": [
+  {
+    "name": "t",
+    "index": 1,
+    "version": "1.2",
+    "description": null,
+    "parsed": true,
+    "annotations": [],
+    "fields": [
+      {
+        "path": "d",
+        "type": "str",
+        "enum": [],
+        "unknown": "duration(ms)",
+        "block": false,
+        "optional": false,
+        "annotations": [
+          {
+            "name": "future.thing",
+            "text": "x y"
+          }
+        ],
+        "description": null
+      },
+      {
+        "path": "v",
+        "type": "str",
+        "enum": [],
+        "unknown": "si.meter",
+        "block": true,
+        "optional": true,
+        "annotations": [],
+        "description": null
+      },
+      {
+        "path": "l.[]",
+        "type": "str",
+        "enum": [],
+        "unknown": "ipaddr",
+        "block": false,
+        "optional": false,
+        "annotations": [
+          {
+            "name": "also.new",
+            "text": null
+          }
+        ],
+        "description": null
+      }
+    ]
+  }
+],
+"events": [
+{"type": "t", "n": 1, "timestamp": "20261107T140210.120Z", "value": {"d": "1500", "v": "3.5\n", "l": ["10.0.0.1"]}},
+{"type": "t", "n": 2, "timestamp": "20261107T140322.415Z", "value": {"d": "0", "v": null, "l": []}}
+]
+}

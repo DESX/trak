@@ -1,0 +1,8 @@
+trak 1.0
+{ e: enum(on, off) }
+##[ t 1 1.0 ]##VAA
+e: maybe
+==[ t 1 20261107T140210.120Z ]==JBBBAAF
+{ }
+##[ zz 2 1.0 ]##EbYA
+==[ zz 1 20261107T140322.415Z ]==ABBBAA

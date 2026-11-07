@@ -1,0 +1,4 @@
+[
+{"op": "define", "name": "t", "schema": "{ a: str, b: |str, c: [] str }\n"},
+{"op": "write", "type": "t", "value": {"a": "", "b": "", "c": ["", ""]}, "timestamp": "20261106T212000.001Z"}
+]

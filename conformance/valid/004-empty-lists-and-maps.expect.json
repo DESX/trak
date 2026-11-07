@@ -1,0 +1,58 @@
+{
+"types": [
+  {
+    "name": "t",
+    "index": 1,
+    "version": "1.0",
+    "description": null,
+    "parsed": true,
+    "annotations": [],
+    "fields": [
+      {
+        "path": "l.[]",
+        "type": "str",
+        "enum": [],
+        "unknown": null,
+        "block": false,
+        "optional": false,
+        "annotations": [],
+        "description": null
+      },
+      {
+        "path": "m.{}",
+        "type": "num",
+        "enum": [],
+        "unknown": null,
+        "block": false,
+        "optional": false,
+        "annotations": [],
+        "description": null
+      },
+      {
+        "path": "ll.[].[]",
+        "type": "str",
+        "enum": [],
+        "unknown": null,
+        "block": false,
+        "optional": false,
+        "annotations": [],
+        "description": null
+      },
+      {
+        "path": "after",
+        "type": "str",
+        "enum": [],
+        "unknown": null,
+        "block": false,
+        "optional": false,
+        "annotations": [],
+        "description": null
+      }
+    ]
+  }
+],
+"events": [
+{"type": "t", "n": 1, "timestamp": "20261106T212000.001Z", "value": {"l": [], "m": [], "ll": [], "after": "x"}},
+{"type": "t", "n": 2, "timestamp": "20261106T212000.002Z", "value": {"l": [], "m": [], "ll": [[], [], ["z"]], "after": "y"}}
+]
+}

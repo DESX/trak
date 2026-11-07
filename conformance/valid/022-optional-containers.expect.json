@@ -1,0 +1,49 @@
+{
+"types": [
+  {
+    "name": "t",
+    "index": 1,
+    "version": "1.0",
+    "description": null,
+    "parsed": true,
+    "annotations": [],
+    "fields": [
+      {
+        "path": "l.[]",
+        "type": "str",
+        "enum": [],
+        "unknown": null,
+        "block": false,
+        "optional": true,
+        "annotations": [],
+        "description": null
+      },
+      {
+        "path": "m.{}",
+        "type": "str",
+        "enum": [],
+        "unknown": null,
+        "block": false,
+        "optional": true,
+        "annotations": [],
+        "description": null
+      },
+      {
+        "path": "o.x",
+        "type": "str",
+        "enum": [],
+        "unknown": null,
+        "block": false,
+        "optional": true,
+        "annotations": [],
+        "description": null
+      }
+    ]
+  }
+],
+"events": [
+{"type": "t", "n": 1, "timestamp": "20261106T212000.001Z", "value": {"l": null, "m": null, "o": null}},
+{"type": "t", "n": 2, "timestamp": "20261106T212000.002Z", "value": {"l": [], "m": [], "o": {"x": "1"}}},
+{"type": "t", "n": 3, "timestamp": "20261106T212000.003Z", "value": {"l": ["a"], "m": [["k", "v"]], "o": null}}
+]
+}

@@ -1,0 +1,745 @@
+{
+"types": [
+  {
+    "name": "type01",
+    "index": 1,
+    "version": "1.0",
+    "description": "Type number 1.",
+    "parsed": true,
+    "annotations": [],
+    "fields": [
+      {
+        "path": "i",
+        "type": "num",
+        "enum": [],
+        "unknown": null,
+        "block": false,
+        "optional": false,
+        "annotations": [],
+        "description": null
+      }
+    ]
+  },
+  {
+    "name": "type02",
+    "index": 2,
+    "version": "1.0",
+    "description": "Type number 2.",
+    "parsed": true,
+    "annotations": [],
+    "fields": [
+      {
+        "path": "i",
+        "type": "num",
+        "enum": [],
+        "unknown": null,
+        "block": false,
+        "optional": false,
+        "annotations": [],
+        "description": null
+      }
+    ]
+  },
+  {
+    "name": "type03",
+    "index": 3,
+    "version": "1.0",
+    "description": "Type number 3.",
+    "parsed": true,
+    "annotations": [],
+    "fields": [
+      {
+        "path": "i",
+        "type": "num",
+        "enum": [],
+        "unknown": null,
+        "block": false,
+        "optional": false,
+        "annotations": [],
+        "description": null
+      }
+    ]
+  },
+  {
+    "name": "type04",
+    "index": 4,
+    "version": "1.0",
+    "description": "Type number 4.",
+    "parsed": true,
+    "annotations": [],
+    "fields": [
+      {
+        "path": "i",
+        "type": "num",
+        "enum": [],
+        "unknown": null,
+        "block": false,
+        "optional": false,
+        "annotations": [],
+        "description": null
+      }
+    ]
+  },
+  {
+    "name": "type05",
+    "index": 5,
+    "version": "1.0",
+    "description": "Type number 5.",
+    "parsed": true,
+    "annotations": [],
+    "fields": [
+      {
+        "path": "i",
+        "type": "num",
+        "enum": [],
+        "unknown": null,
+        "block": false,
+        "optional": false,
+        "annotations": [],
+        "description": null
+      }
+    ]
+  },
+  {
+    "name": "type06",
+    "index": 6,
+    "version": "1.0",
+    "description": "Type number 6.",
+    "parsed": true,
+    "annotations": [],
+    "fields": [
+      {
+        "path": "i",
+        "type": "num",
+        "enum": [],
+        "unknown": null,
+        "block": false,
+        "optional": false,
+        "annotations": [],
+        "description": null
+      }
+    ]
+  },
+  {
+    "name": "type07",
+    "index": 7,
+    "version": "1.0",
+    "description": "Type number 7.",
+    "parsed": true,
+    "annotations": [],
+    "fields": [
+      {
+        "path": "i",
+        "type": "num",
+        "enum": [],
+        "unknown": null,
+        "block": false,
+        "optional": false,
+        "annotations": [],
+        "description": null
+      }
+    ]
+  },
+  {
+    "name": "type08",
+    "index": 8,
+    "version": "1.0",
+    "description": "Type number 8.",
+    "parsed": true,
+    "annotations": [],
+    "fields": [
+      {
+        "path": "i",
+        "type": "num",
+        "enum": [],
+        "unknown": null,
+        "block": false,
+        "optional": false,
+        "annotations": [],
+        "description": null
+      }
+    ]
+  },
+  {
+    "name": "type09",
+    "index": 9,
+    "version": "1.0",
+    "description": "Type number 9.",
+    "parsed": true,
+    "annotations": [],
+    "fields": [
+      {
+        "path": "i",
+        "type": "num",
+        "enum": [],
+        "unknown": null,
+        "block": false,
+        "optional": false,
+        "annotations": [],
+        "description": null
+      }
+    ]
+  },
+  {
+    "name": "type10",
+    "index": 10,
+    "version": "1.0",
+    "description": "Type number 10.",
+    "parsed": true,
+    "annotations": [],
+    "fields": [
+      {
+        "path": "i",
+        "type": "num",
+        "enum": [],
+        "unknown": null,
+        "block": false,
+        "optional": false,
+        "annotations": [],
+        "description": null
+      }
+    ]
+  },
+  {
+    "name": "type11",
+    "index": 11,
+    "version": "1.0",
+    "description": "Type number 11.",
+    "parsed": true,
+    "annotations": [],
+    "fields": [
+      {
+        "path": "i",
+        "type": "num",
+        "enum": [],
+        "unknown": null,
+        "block": false,
+        "optional": false,
+        "annotations": [],
+        "description": null
+      }
+    ]
+  },
+  {
+    "name": "type12",
+    "index": 12,
+    "version": "1.0",
+    "description": "Type number 12.",
+    "parsed": true,
+    "annotations": [],
+    "fields": [
+      {
+        "path": "i",
+        "type": "num",
+        "enum": [],
+        "unknown": null,
+        "block": false,
+        "optional": false,
+        "annotations": [],
+        "description": null
+      }
+    ]
+  },
+  {
+    "name": "type13",
+    "index": 13,
+    "version": "1.0",
+    "description": "Type number 13.",
+    "parsed": true,
+    "annotations": [],
+    "fields": [
+      {
+        "path": "i",
+        "type": "num",
+        "enum": [],
+        "unknown": null,
+        "block": false,
+        "optional": false,
+        "annotations": [],
+        "description": null
+      }
+    ]
+  },
+  {
+    "name": "type14",
+    "index": 14,
+    "version": "1.0",
+    "description": "Type number 14.",
+    "parsed": true,
+    "annotations": [],
+    "fields": [
+      {
+        "path": "i",
+        "type": "num",
+        "enum": [],
+        "unknown": null,
+        "block": false,
+        "optional": false,
+        "annotations": [],
+        "description": null
+      }
+    ]
+  },
+  {
+    "name": "type15",
+    "index": 15,
+    "version": "1.0",
+    "description": "Type number 15.",
+    "parsed": true,
+    "annotations": [],
+    "fields": [
+      {
+        "path": "i",
+        "type": "num",
+        "enum": [],
+        "unknown": null,
+        "block": false,
+        "optional": false,
+        "annotations": [],
+        "description": null
+      }
+    ]
+  },
+  {
+    "name": "type16",
+    "index": 16,
+    "version": "1.0",
+    "description": "Type number 16.",
+    "parsed": true,
+    "annotations": [],
+    "fields": [
+      {
+        "path": "i",
+        "type": "num",
+        "enum": [],
+        "unknown": null,
+        "block": false,
+        "optional": false,
+        "annotations": [],
+        "description": null
+      }
+    ]
+  },
+  {
+    "name": "type17",
+    "index": 17,
+    "version": "1.0",
+    "description": "Type number 17.",
+    "parsed": true,
+    "annotations": [],
+    "fields": [
+      {
+        "path": "i",
+        "type": "num",
+        "enum": [],
+        "unknown": null,
+        "block": false,
+        "optional": false,
+        "annotations": [],
+        "description": null
+      }
+    ]
+  },
+  {
+    "name": "type18",
+    "index": 18,
+    "version": "1.0",
+    "description": "Type number 18.",
+    "parsed": true,
+    "annotations": [],
+    "fields": [
+      {
+        "path": "i",
+        "type": "num",
+        "enum": [],
+        "unknown": null,
+        "block": false,
+        "optional": false,
+        "annotations": [],
+        "description": null
+      }
+    ]
+  },
+  {
+    "name": "type19",
+    "index": 19,
+    "version": "1.0",
+    "description": "Type number 19.",
+    "parsed": true,
+    "annotations": [],
+    "fields": [
+      {
+        "path": "i",
+        "type": "num",
+        "enum": [],
+        "unknown": null,
+        "block": false,
+        "optional": false,
+        "annotations": [],
+        "description": null
+      }
+    ]
+  },
+  {
+    "name": "type20",
+    "index": 20,
+    "version": "1.0",
+    "description": "Type number 20.",
+    "parsed": true,
+    "annotations": [],
+    "fields": [
+      {
+        "path": "i",
+        "type": "num",
+        "enum": [],
+        "unknown": null,
+        "block": false,
+        "optional": false,
+        "annotations": [],
+        "description": null
+      }
+    ]
+  },
+  {
+    "name": "type21",
+    "index": 21,
+    "version": "1.0",
+    "description": "Type number 21.",
+    "parsed": true,
+    "annotations": [],
+    "fields": [
+      {
+        "path": "i",
+        "type": "num",
+        "enum": [],
+        "unknown": null,
+        "block": false,
+        "optional": false,
+        "annotations": [],
+        "description": null
+      }
+    ]
+  },
+  {
+    "name": "type22",
+    "index": 22,
+    "version": "1.0",
+    "description": "Type number 22.",
+    "parsed": true,
+    "annotations": [],
+    "fields": [
+      {
+        "path": "i",
+        "type": "num",
+        "enum": [],
+        "unknown": null,
+        "block": false,
+        "optional": false,
+        "annotations": [],
+        "description": null
+      }
+    ]
+  },
+  {
+    "name": "type23",
+    "index": 23,
+    "version": "1.0",
+    "description": "Type number 23.",
+    "parsed": true,
+    "annotations": [],
+    "fields": [
+      {
+        "path": "i",
+        "type": "num",
+        "enum": [],
+        "unknown": null,
+        "block": false,
+        "optional": false,
+        "annotations": [],
+        "description": null
+      }
+    ]
+  },
+  {
+    "name": "type24",
+    "index": 24,
+    "version": "1.0",
+    "description": "Type number 24.",
+    "parsed": true,
+    "annotations": [],
+    "fields": [
+      {
+        "path": "i",
+        "type": "num",
+        "enum": [],
+        "unknown": null,
+        "block": false,
+        "optional": false,
+        "annotations": [],
+        "description": null
+      }
+    ]
+  },
+  {
+    "name": "type25",
+    "index": 25,
+    "version": "1.0",
+    "description": "Type number 25.",
+    "parsed": true,
+    "annotations": [],
+    "fields": [
+      {
+        "path": "i",
+        "type": "num",
+        "enum": [],
+        "unknown": null,
+        "block": false,
+        "optional": false,
+        "annotations": [],
+        "description": null
+      }
+    ]
+  },
+  {
+    "name": "type26",
+    "index": 26,
+    "version": "1.0",
+    "description": "Type number 26.",
+    "parsed": true,
+    "annotations": [],
+    "fields": [
+      {
+        "path": "i",
+        "type": "num",
+        "enum": [],
+        "unknown": null,
+        "block": false,
+        "optional": false,
+        "annotations": [],
+        "description": null
+      }
+    ]
+  },
+  {
+    "name": "type27",
+    "index": 27,
+    "version": "1.0",
+    "description": "Type number 27.",
+    "parsed": true,
+    "annotations": [],
+    "fields": [
+      {
+        "path": "i",
+        "type": "num",
+        "enum": [],
+        "unknown": null,
+        "block": false,
+        "optional": false,
+        "annotations": [],
+        "description": null
+      }
+    ]
+  },
+  {
+    "name": "type28",
+    "index": 28,
+    "version": "1.0",
+    "description": "Type number 28.",
+    "parsed": true,
+    "annotations": [],
+    "fields": [
+      {
+        "path": "i",
+        "type": "num",
+        "enum": [],
+        "unknown": null,
+        "block": false,
+        "optional": false,
+        "annotations": [],
+        "description": null
+      }
+    ]
+  },
+  {
+    "name": "type29",
+    "index": 29,
+    "version": "1.0",
+    "description": "Type number 29.",
+    "parsed": true,
+    "annotations": [],
+    "fields": [
+      {
+        "path": "i",
+        "type": "num",
+        "enum": [],
+        "unknown": null,
+        "block": false,
+        "optional": false,
+        "annotations": [],
+        "description": null
+      }
+    ]
+  },
+  {
+    "name": "type30",
+    "index": 30,
+    "version": "1.0",
+    "description": "Type number 30.",
+    "parsed": true,
+    "annotations": [],
+    "fields": [
+      {
+        "path": "i",
+        "type": "num",
+        "enum": [],
+        "unknown": null,
+        "block": false,
+        "optional": false,
+        "annotations": [],
+        "description": null
+      }
+    ]
+  },
+  {
+    "name": "type31",
+    "index": 31,
+    "version": "1.0",
+    "description": "Type number 31.",
+    "parsed": true,
+    "annotations": [],
+    "fields": [
+      {
+        "path": "i",
+        "type": "num",
+        "enum": [],
+        "unknown": null,
+        "block": false,
+        "optional": false,
+        "annotations": [],
+        "description": null
+      }
+    ]
+  },
+  {
+    "name": "type32",
+    "index": 32,
+    "version": "1.0",
+    "description": "Type number 32.",
+    "parsed": true,
+    "annotations": [],
+    "fields": [
+      {
+        "path": "i",
+        "type": "num",
+        "enum": [],
+        "unknown": null,
+        "block": false,
+        "optional": false,
+        "annotations": [],
+        "description": null
+      }
+    ]
+  },
+  {
+    "name": "type33",
+    "index": 33,
+    "version": "1.0",
+    "description": "Type number 33.",
+    "parsed": true,
+    "annotations": [],
+    "fields": [
+      {
+        "path": "i",
+        "type": "num",
+        "enum": [],
+        "unknown": null,
+        "block": false,
+        "optional": false,
+        "annotations": [],
+        "description": null
+      }
+    ]
+  },
+  {
+    "name": "type34",
+    "index": 34,
+    "version": "1.0",
+    "description": "Type number 34.",
+    "parsed": true,
+    "annotations": [],
+    "fields": [
+      {
+        "path": "i",
+        "type": "num",
+        "enum": [],
+        "unknown": null,
+        "block": false,
+        "optional": false,
+        "annotations": [],
+        "description": null
+      }
+    ]
+  },
+  {
+    "name": "type35",
+    "index": 35,
+    "version": "1.0",
+    "description": "Type number 35.",
+    "parsed": true,
+    "annotations": [],
+    "fields": [
+      {
+        "path": "i",
+        "type": "num",
+        "enum": [],
+        "unknown": null,
+        "block": false,
+        "optional": false,
+        "annotations": [],
+        "description": null
+      }
+    ]
+  }
+],
+"events": [
+{"type": "type01", "n": 1, "timestamp": "20261106T212000.001Z", "value": {"i": "1"}},
+{"type": "type03", "n": 1, "timestamp": "20261106T212000.002Z", "value": {"i": "3"}},
+{"type": "type05", "n": 1, "timestamp": "20261106T212000.003Z", "value": {"i": "5"}},
+{"type": "type07", "n": 1, "timestamp": "20261106T212000.004Z", "value": {"i": "7"}},
+{"type": "type09", "n": 1, "timestamp": "20261106T212000.005Z", "value": {"i": "9"}},
+{"type": "type11", "n": 1, "timestamp": "20261106T212000.006Z", "value": {"i": "11"}},
+{"type": "type13", "n": 1, "timestamp": "20261106T212000.007Z", "value": {"i": "13"}},
+{"type": "type15", "n": 1, "timestamp": "20261106T212000.008Z", "value": {"i": "15"}},
+{"type": "type17", "n": 1, "timestamp": "20261106T212000.009Z", "value": {"i": "17"}},
+{"type": "type19", "n": 1, "timestamp": "20261106T212000.010Z", "value": {"i": "19"}},
+{"type": "type21", "n": 1, "timestamp": "20261106T212000.011Z", "value": {"i": "21"}},
+{"type": "type23", "n": 1, "timestamp": "20261106T212000.012Z", "value": {"i": "23"}},
+{"type": "type25", "n": 1, "timestamp": "20261106T212000.013Z", "value": {"i": "25"}},
+{"type": "type27", "n": 1, "timestamp": "20261106T212000.014Z", "value": {"i": "27"}},
+{"type": "type29", "n": 1, "timestamp": "20261106T212000.015Z", "value": {"i": "29"}},
+{"type": "type31", "n": 1, "timestamp": "20261106T212000.016Z", "value": {"i": "31"}},
+{"type": "type33", "n": 1, "timestamp": "20261106T212000.017Z", "value": {"i": "33"}},
+{"type": "type35", "n": 1, "timestamp": "20261106T212000.018Z", "value": {"i": "35"}},
+{"type": "type01", "n": 2, "timestamp": "20261106T212000.019Z", "value": {"i": "1"}},
+{"type": "type04", "n": 1, "timestamp": "20261106T212000.020Z", "value": {"i": "4"}},
+{"type": "type07", "n": 2, "timestamp": "20261106T212000.021Z", "value": {"i": "7"}},
+{"type": "type10", "n": 1, "timestamp": "20261106T212000.022Z", "value": {"i": "10"}},
+{"type": "type13", "n": 2, "timestamp": "20261106T212000.023Z", "value": {"i": "13"}},
+{"type": "type16", "n": 1, "timestamp": "20261106T212000.024Z", "value": {"i": "16"}},
+{"type": "type19", "n": 2, "timestamp": "20261106T212000.025Z", "value": {"i": "19"}},
+{"type": "type22", "n": 1, "timestamp": "20261106T212000.026Z", "value": {"i": "22"}},
+{"type": "type25", "n": 2, "timestamp": "20261106T212000.027Z", "value": {"i": "25"}},
+{"type": "type28", "n": 1, "timestamp": "20261106T212000.028Z", "value": {"i": "28"}},
+{"type": "type31", "n": 2, "timestamp": "20261106T212000.029Z", "value": {"i": "31"}},
+{"type": "type34", "n": 1, "timestamp": "20261106T212000.030Z", "value": {"i": "34"}},
+{"type": "type01", "n": 3, "timestamp": "20261106T212000.031Z", "value": {"i": "1"}},
+{"type": "type05", "n": 2, "timestamp": "20261106T212000.032Z", "value": {"i": "5"}},
+{"type": "type09", "n": 2, "timestamp": "20261106T212000.033Z", "value": {"i": "9"}},
+{"type": "type13", "n": 3, "timestamp": "20261106T212000.034Z", "value": {"i": "13"}},
+{"type": "type17", "n": 2, "timestamp": "20261106T212000.035Z", "value": {"i": "17"}},
+{"type": "type21", "n": 2, "timestamp": "20261106T212000.036Z", "value": {"i": "21"}},
+{"type": "type25", "n": 3, "timestamp": "20261106T212000.037Z", "value": {"i": "25"}},
+{"type": "type29", "n": 2, "timestamp": "20261106T212000.038Z", "value": {"i": "29"}},
+{"type": "type33", "n": 2, "timestamp": "20261106T212000.039Z", "value": {"i": "33"}}
+]
+}

@@ -1,0 +1,6 @@
+[
+{"op": "define", "name": "t", "schema": "{ a: str?, b: num?, c: |str?, d: enum(x)?, e: { f: str }?, g: str }\n"},
+{"op": "write", "type": "t", "value": {"a": null, "b": null, "c": null, "d": null, "e": null, "g": "only"}, "timestamp": "20261106T212000.001Z"},
+{"op": "write", "type": "t", "value": {"a": "1", "b": 2, "c": "3", "d": "x", "e": {"f": "5"}, "g": "all"}, "timestamp": "20261106T212000.002Z"},
+{"op": "write", "type": "t", "value": {"g": "missing keys are absent too"}, "timestamp": "20261106T212000.003Z"}
+]

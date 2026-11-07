@@ -1,0 +1,4 @@
+[
+{"op": "define", "name": "t", "schema": "{ name: str, tags: {} str, block: |str }\n"},
+{"op": "write", "type": "t", "value": {"name": "Zoë 🚀 日本語", "tags": [["ключ", "значение"], ["🔑", "∞"], ["é", ""]], "block": "naïve\ncafé"}, "timestamp": "20261106T212000.001Z"}
+]

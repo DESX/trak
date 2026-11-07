@@ -1,0 +1,21 @@
+trak 1.0
+{
+  jobs: [] {
+    name: str,
+    env: {} str,
+    steps: [] { cmd: str, out: |str?, meta: {} [] num },
+  },
+}
+##[ t 1 1.0 ]##eHAA
+jobs.0.name: build
+jobs.0.env.CC: gcc
+jobs.0.env.CFLAGS: -O2
+jobs.0.steps.0.cmd: make
+ok
+
+--[ jobs.0.steps.0.out ]--
+jobs.0.steps.0.meta.t.0: 1
+jobs.0.steps.0.meta.t.1: 2
+jobs.0.steps.1.cmd: test
+jobs.1.name: lint
+==[ t 1 20261106T212000.001Z ]==iGBBBAACFCCDGDCEBDCBCBBBAEAAEAA

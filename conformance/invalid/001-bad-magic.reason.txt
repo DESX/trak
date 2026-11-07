@@ -1,0 +1,2 @@
+bad magic line
+offset: 0

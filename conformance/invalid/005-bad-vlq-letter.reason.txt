@@ -1,0 +1,2 @@
+'0' is not a VLQ letter
+offset: 313

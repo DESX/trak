@@ -1,0 +1,47 @@
+{
+"types": [
+  {
+    "name": "t",
+    "index": 1,
+    "version": "1.0",
+    "description": null,
+    "parsed": true,
+    "annotations": [],
+    "fields": [
+      {
+        "path": "name",
+        "type": "str",
+        "enum": [],
+        "unknown": null,
+        "block": false,
+        "optional": false,
+        "annotations": [],
+        "description": null
+      },
+      {
+        "path": "tags.{}",
+        "type": "str",
+        "enum": [],
+        "unknown": null,
+        "block": false,
+        "optional": false,
+        "annotations": [],
+        "description": null
+      },
+      {
+        "path": "block",
+        "type": "str",
+        "enum": [],
+        "unknown": null,
+        "block": true,
+        "optional": false,
+        "annotations": [],
+        "description": null
+      }
+    ]
+  }
+],
+"events": [
+{"type": "t", "n": 1, "timestamp": "20261106T212000.001Z", "value": {"name": "Zoë 🚀 日本語", "tags": [["ключ", "значение"], ["🔑", "∞"], ["é", ""]], "block": "naïve\ncafé"}}
+]
+}

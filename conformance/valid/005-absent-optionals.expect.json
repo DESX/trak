@@ -1,0 +1,81 @@
+{
+"types": [
+  {
+    "name": "t",
+    "index": 1,
+    "version": "1.0",
+    "description": null,
+    "parsed": true,
+    "annotations": [],
+    "fields": [
+      {
+        "path": "a",
+        "type": "str",
+        "enum": [],
+        "unknown": null,
+        "block": false,
+        "optional": true,
+        "annotations": [],
+        "description": null
+      },
+      {
+        "path": "b",
+        "type": "num",
+        "enum": [],
+        "unknown": null,
+        "block": false,
+        "optional": true,
+        "annotations": [],
+        "description": null
+      },
+      {
+        "path": "c",
+        "type": "str",
+        "enum": [],
+        "unknown": null,
+        "block": true,
+        "optional": true,
+        "annotations": [],
+        "description": null
+      },
+      {
+        "path": "d",
+        "type": "enum",
+        "enum": [
+          "x"
+        ],
+        "unknown": null,
+        "block": false,
+        "optional": true,
+        "annotations": [],
+        "description": null
+      },
+      {
+        "path": "e.f",
+        "type": "str",
+        "enum": [],
+        "unknown": null,
+        "block": false,
+        "optional": true,
+        "annotations": [],
+        "description": null
+      },
+      {
+        "path": "g",
+        "type": "str",
+        "enum": [],
+        "unknown": null,
+        "block": false,
+        "optional": false,
+        "annotations": [],
+        "description": null
+      }
+    ]
+  }
+],
+"events": [
+{"type": "t", "n": 1, "timestamp": "20261106T212000.001Z", "value": {"a": null, "b": null, "c": null, "d": null, "e": null, "g": "only"}},
+{"type": "t", "n": 2, "timestamp": "20261106T212000.002Z", "value": {"a": "1", "b": "2", "c": "3", "d": "x", "e": {"f": "5"}, "g": "all"}},
+{"type": "t", "n": 3, "timestamp": "20261106T212000.003Z", "value": {"a": null, "b": null, "c": null, "d": null, "e": null, "g": "missing keys are absent too"}}
+]
+}

@@ -1,0 +1,14 @@
+[
+{"op": "define", "name": "a", "schema": "{ i: num }\n"},
+{"op": "define", "name": "b", "schema": "{ i: num }\n"},
+{"op": "write", "type": "a", "value": {"i": 0}, "timestamp": "20261107T000000.000Z"},
+{"op": "write", "type": "b", "value": {"i": 0}, "timestamp": "20000101T000000.000Z"},
+{"op": "write", "type": "a", "value": {"i": 1}, "timestamp": "20261107T000000.000Z"},
+{"op": "write", "type": "b", "value": {"i": 1}, "timestamp": "20000101T000000.000Z"},
+{"op": "write", "type": "a", "value": {"i": 2}, "timestamp": "20261107T000000.000Z"},
+{"op": "write", "type": "b", "value": {"i": 2}, "timestamp": "20000101T000000.000Z"},
+{"op": "write", "type": "a", "value": {"i": 3}, "timestamp": "20261107T000000.000Z"},
+{"op": "write", "type": "b", "value": {"i": 3}, "timestamp": "20000101T000000.000Z"},
+{"op": "write", "type": "a", "value": {"i": 4}, "timestamp": "20261107T000000.000Z"},
+{"op": "write", "type": "b", "value": {"i": 4}, "timestamp": "20000101T000000.000Z"}
+]

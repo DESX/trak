@@ -1,0 +1,20 @@
+trak 1.0
+{ out: |str, note: str }
+##[ log 1 1.0 ]##ZAA
+==[ log 1 20261107T140210.120Z ]==dHeEeEBAADCDBCXA
+##[ log 1 1.0 ]##kXAA
+--[ out ]--
+note: forged
+==[ log 99 20261107T140210.120Z ]==A
+--[ out ]--
+note: real
+==[ log 1 20261106T212000.001Z ]==gCBBBAAfEE
+==[ log 1 20261107T140210.120Z ]==dHeEeEBAADCDBCXA
+##[ log 1 1.0 ]##kXAA
+--[ out ]--
+note: forged
+==[ log 99 20261107T140210.120Z ]==A
+
+--[ out ]--
+note: --[ note ]--
+==[ log 2 20261106T212000.002Z ]==gLBBhWAAfFM

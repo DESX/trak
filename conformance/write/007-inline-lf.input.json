@@ -1,0 +1,4 @@
+[
+{"op": "define", "name": "t", "schema": "{ a: str, b: str }\n"},
+{"op": "write", "type": "t", "value": {"a": "line one\nb: not a field\n==[ t 2 x ]==A", "b": "end"}, "timestamp": "20261106T212000.001Z"}
+]

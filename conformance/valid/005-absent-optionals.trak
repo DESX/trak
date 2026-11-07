@@ -1,0 +1,15 @@
+trak 1.0
+{ a: str?, b: num?, c: |str?, d: enum(x)?, e: { f: str }?, g: str }
+##[ t 1 1.0 ]##cQAA
+g: only
+==[ t 1 20261106T212000.001Z ]==IBBBAAAAAAAE
+a: 1
+b: 2
+3
+--[ c ]--
+d: x
+e.f: 5
+g: all
+==[ t 2 20261106T212000.002Z ]==bPBBcCAABBBBBBBBBBD
+g: missing keys are absent too
+==[ t 3 20261106T212000.003Z ]==bFBfRfRAAAAAAAbB

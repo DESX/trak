@@ -1,0 +1,48 @@
+{
+"types": [
+  {
+    "name": "idle",
+    "index": 1,
+    "version": "1.0",
+    "description": "Never written.",
+    "parsed": true,
+    "annotations": [],
+    "fields": [
+      {
+        "path": "a",
+        "type": "str",
+        "enum": [],
+        "unknown": null,
+        "block": false,
+        "optional": false,
+        "annotations": [],
+        "description": null
+      }
+    ]
+  },
+  {
+    "name": "busy",
+    "index": 2,
+    "version": "1.0",
+    "description": null,
+    "parsed": true,
+    "annotations": [],
+    "fields": [
+      {
+        "path": "a",
+        "type": "str",
+        "enum": [],
+        "unknown": null,
+        "block": false,
+        "optional": false,
+        "annotations": [],
+        "description": null
+      }
+    ]
+  }
+],
+"events": [
+{"type": "busy", "n": 1, "timestamp": "20261106T212000.001Z", "value": {"a": "x"}},
+{"type": "busy", "n": 2, "timestamp": "20261106T212000.002Z", "value": {"a": "y"}}
+]
+}

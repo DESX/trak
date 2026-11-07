@@ -1,0 +1,13 @@
+trak 1.0
+{ a: str, b: num }
+##[ t 1 1.0 ]##TADFAbaY
+{ c: str }
+##[ u 2 1.0 ]##LBBB
+a: x
+b: 1
+==[ t 1 20261107T140210.120Z ]==KbGbGBACDbmMBB
+c: y
+==[ u 1 20261107T140210.120Z ]==FcGcGcGABAB
+a: zz
+b: 22
+==[ t 2 20261107T140322.415Z ]==MbYbYeDAACC

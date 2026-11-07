@@ -1,0 +1,5 @@
+[
+{"op": "define", "name": "t", "schema": "{\n  level: enum(debug, info, warn, error,) @color,\n  size: num @unit(bytes) @x.y-z(a b, c),\n  ids: [] str @uuid,\n}\n"},
+{"op": "write", "type": "t", "value": {"level": "warn", "size": 1024, "ids": ["a", "b"]}, "timestamp": "20261106T212000.001Z"},
+{"op": "write", "type": "t", "value": {"level": "debug", "size": 0, "ids": []}, "timestamp": "20261106T212000.002Z"}
+]

@@ -1,0 +1,72 @@
+{
+"types": [
+  {
+    "name": "t",
+    "index": 1,
+    "version": "1.0",
+    "description": null,
+    "parsed": true,
+    "annotations": [],
+    "fields": [
+      {
+        "path": "level",
+        "type": "enum",
+        "enum": [
+          "debug",
+          "info",
+          "warn",
+          "error"
+        ],
+        "unknown": null,
+        "block": false,
+        "optional": false,
+        "annotations": [
+          {
+            "name": "color",
+            "text": null
+          }
+        ],
+        "description": null
+      },
+      {
+        "path": "size",
+        "type": "num",
+        "enum": [],
+        "unknown": null,
+        "block": false,
+        "optional": false,
+        "annotations": [
+          {
+            "name": "unit",
+            "text": "bytes"
+          },
+          {
+            "name": "x.y-z",
+            "text": "a b, c"
+          }
+        ],
+        "description": null
+      },
+      {
+        "path": "ids.[]",
+        "type": "str",
+        "enum": [],
+        "unknown": null,
+        "block": false,
+        "optional": false,
+        "annotations": [
+          {
+            "name": "uuid",
+            "text": null
+          }
+        ],
+        "description": null
+      }
+    ]
+  }
+],
+"events": [
+{"type": "t", "n": 1, "timestamp": "20261106T212000.001Z", "value": {"level": "warn", "size": "1024", "ids": ["a", "b"]}},
+{"type": "t", "n": 2, "timestamp": "20261106T212000.002Z", "value": {"level": "debug", "size": "0", "ids": []}}
+]
+}

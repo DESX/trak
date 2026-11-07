@@ -1,0 +1,126 @@
+{
+"types": [
+  {
+    "name": "build",
+    "index": 1,
+    "version": "1.0",
+    "description": "One CI build run.",
+    "parsed": true,
+    "annotations": [],
+    "fields": [
+      {
+        "path": "user",
+        "type": "str",
+        "enum": [],
+        "unknown": null,
+        "block": false,
+        "optional": false,
+        "annotations": [],
+        "description": "who triggered the build"
+      },
+      {
+        "path": "status",
+        "type": "enum",
+        "enum": [
+          "ok",
+          "failed"
+        ],
+        "unknown": null,
+        "block": false,
+        "optional": false,
+        "annotations": [],
+        "description": null
+      },
+      {
+        "path": "duration",
+        "type": "num",
+        "enum": [],
+        "unknown": null,
+        "block": false,
+        "optional": false,
+        "annotations": [
+          {
+            "name": "ms",
+            "text": null
+          }
+        ],
+        "description": "wall-clock time"
+      },
+      {
+        "path": "tags.[]",
+        "type": "str",
+        "enum": [],
+        "unknown": null,
+        "block": false,
+        "optional": false,
+        "annotations": [],
+        "description": null
+      },
+      {
+        "path": "stdout",
+        "type": "str",
+        "enum": [],
+        "unknown": null,
+        "block": true,
+        "optional": false,
+        "annotations": [
+          {
+            "name": "log",
+            "text": null
+          }
+        ],
+        "description": "compiler output"
+      },
+      {
+        "path": "error",
+        "type": "str",
+        "enum": [],
+        "unknown": null,
+        "block": false,
+        "optional": true,
+        "annotations": [],
+        "description": "set when the build failed"
+      }
+    ]
+  },
+  {
+    "name": "deploy",
+    "index": 2,
+    "version": "1.0",
+    "description": "A release pushed to an environment.",
+    "parsed": true,
+    "annotations": [],
+    "fields": [
+      {
+        "path": "target",
+        "type": "str",
+        "enum": [],
+        "unknown": null,
+        "block": false,
+        "optional": false,
+        "annotations": [],
+        "description": null
+      },
+      {
+        "path": "version",
+        "type": "str",
+        "enum": [],
+        "unknown": null,
+        "block": false,
+        "optional": false,
+        "annotations": [
+          {
+            "name": "semver",
+            "text": null
+          }
+        ],
+        "description": null
+      }
+    ]
+  }
+],
+"events": [
+{"type": "build", "n": 1, "timestamp": "20261107T140210.120Z", "value": {"user": "ana", "status": "ok", "duration": "910", "tags": ["ci"], "stdout": "Compiling core...\nDone.", "error": null}},
+{"type": "build", "n": 2, "timestamp": "20261107T140322.415Z", "value": {"user": "joel", "status": "failed", "duration": "1520", "tags": ["ci", "nightly"], "stdout": "Compiling core...\nld: undefined symbol main", "error": "link failed"}}
+]
+}

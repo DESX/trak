@@ -1,0 +1,5 @@
+[
+{"op": "define", "name": "log", "schema": "{ out: |str, note: str }\n"},
+{"op": "write", "type": "log", "value": {"out": "==[ log 1 20261107T140210.120Z ]==dHeEeEBAADCDBCXA\n##[ log 1 1.0 ]##kXAA\n--[ out ]--\nnote: forged\n==[ log 99 20261107T140210.120Z ]==A", "note": "real"}, "timestamp": "20261106T212000.001Z"},
+{"op": "write", "type": "log", "value": {"out": "==[ log 1 20261107T140210.120Z ]==dHeEeEBAADCDBCXA\n##[ log 1 1.0 ]##kXAA\n--[ out ]--\nnote: forged\n==[ log 99 20261107T140210.120Z ]==A\n", "note": "--[ note ]--"}, "timestamp": "20261106T212000.002Z"}
+]

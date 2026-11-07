@@ -1,0 +1,12 @@
+trak 1.0
+{ m: {} str, nested: {} { v: str } }
+##[ t 1 1.0 ]##bLAA
+m.a.b: 1
+m.c:d: 2
+m.e]f: 3
+m.g h: 4
+m. ]==: 5
+m.: 6
+nested.x.y.v: 7
+nested.x.v: 8
+==[ t 1 20261106T212000.001Z ]==dEBBBAAGDBDBDBDBEBABCDBBB

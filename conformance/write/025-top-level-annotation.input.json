@@ -1,0 +1,4 @@
+[
+{"op": "define", "name": "t", "schema": "// Annotated type.\n{ a: str } @table(wide) @sorted\n"},
+{"op": "write", "type": "t", "value": {"a": "x"}, "timestamp": "20261106T212000.001Z"}
+]

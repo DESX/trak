@@ -1,0 +1,15 @@
+trak 1.2
+{
+  d: duration(ms) @future.thing(x y),
+  v: |si.meter?,
+  l: [] ipaddr @also.new,
+}
+##[ t 1 1.2 ]##dHAA
+d: 1500
+3.5
+
+--[ v ]--
+l.0: 10.0.0.1
+==[ t 1 20261107T140210.120Z ]==bLBBBAAEBEBI
+d: 0
+==[ t 2 20261107T140322.415Z ]==FBBdFAABAA

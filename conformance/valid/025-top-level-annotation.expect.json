@@ -1,0 +1,36 @@
+{
+"types": [
+  {
+    "name": "t",
+    "index": 1,
+    "version": "1.0",
+    "description": "Annotated type.",
+    "parsed": true,
+    "annotations": [
+      {
+        "name": "table",
+        "text": "wide"
+      },
+      {
+        "name": "sorted",
+        "text": null
+      }
+    ],
+    "fields": [
+      {
+        "path": "a",
+        "type": "str",
+        "enum": [],
+        "unknown": null,
+        "block": false,
+        "optional": false,
+        "annotations": [],
+        "description": null
+      }
+    ]
+  }
+],
+"events": [
+{"type": "t", "n": 1, "timestamp": "20261106T212000.001Z", "value": {"a": "x"}}
+]
+}

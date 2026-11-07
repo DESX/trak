@@ -1,0 +1,6 @@
+[
+{"op": "define", "name": "t", "schema": "{ e: {}, l: [] {}, m: {} {}, o: { inner: {} }? }\n"},
+{"op": "write", "type": "t", "value": {"e": {}, "l": [{}, {}, {}], "m": [["k", {}]], "o": {"inner": {}}}, "timestamp": "20261106T212000.001Z"},
+{"op": "define", "name": "bare", "schema": "{}\n"},
+{"op": "write", "type": "bare", "value": {}, "timestamp": "20261106T212000.002Z"}
+]

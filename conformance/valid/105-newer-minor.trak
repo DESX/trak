@@ -1,0 +1,10 @@
+trak 1.9
+{ a: str }
+##[ old 1 1.0 ]##LAA
+// From a later minor.
+{ a: str @since(1.9) }
+##[ new 2 1.9 ]##bUBA
+a: x
+==[ new 1 20261107T140210.120Z ]==FBBBAAB
+a: y
+==[ old 1 20261107T140322.415Z ]==FeMeMbWAAB

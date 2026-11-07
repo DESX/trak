@@ -1,0 +1,17 @@
+trak 1.0
+// First line of the type description.
+//   Second line, indented.
+
+{
+  a: str, b: str,          // describes b, the last key on the line
+  // a standalone comment describes nothing
+  c: {                     // describes c
+    d: [] str,             // describes d
+  },
+}
+// trailing comment
+##[ t 1 1.0 ]##lHAA
+a: 1
+b: 2
+c.d.0: 3
+==[ t 1 20261106T212000.001Z ]==TBBBAABBBB

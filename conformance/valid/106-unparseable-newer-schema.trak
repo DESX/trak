@@ -1,0 +1,11 @@
+trak 1.4
+{ a: str }
+##[ ok 1 1.0 ]##LAA
+{ a: str = "default" }
+##[ future 2 1.4 ]##XBA
+a: x
+==[ future 1 20261107T140210.120Z ]==FBBBAAB
+a: y
+==[ ok 1 20261107T140210.120Z ]==FdUdUbZAAB
+a: z
+==[ future 2 20261107T140322.415Z ]==FbYbYdWAAB
