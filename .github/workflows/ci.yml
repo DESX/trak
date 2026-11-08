@@ -139,7 +139,8 @@ jobs:
       - uses: actions/checkout@v4
       - run: cmake -S cpp -B cpp/build -DCMAKE_CXX_COMPILER=clang++ -DTRAK_BUILD_TESTS=OFF -DTRAK_BUILD_FUZZERS=ON
       - run: cmake --build cpp/build --target trak_fuzz_reader --parallel
-      - run: mkdir -p corpus && cp conformance/*/*.trak corpus/
+      # Valid and write vectors share names, so prefix each file with its directory.
+      - run: mkdir -p corpus && for f in conformance/*/*.trak; do cp "$f" "corpus/$(basename "$(dirname "$f")")-$(basename "$f")"; done
       - run: cpp/build/trak_fuzz_reader -max_total_time=60 -timeout=10 corpus
 
   cross:
@@ -162,7 +163,7 @@ jobs:
           go-version: stable
           cache-dependency-path: go/go.sum
       - run: pip install -e python
-      - run: cd go && go build -o interop ./internal/interop
+      - run: cd go && go build -o interop$(go env GOEXE) ./internal/interop
       - run: cmake -S cpp -B cpp/build -DCMAKE_BUILD_TYPE=Release
       - run: cmake --build cpp/build --config Release --target trak_interop --parallel
       - name: Cross-check
@@ -171,7 +172,7 @@ jobs:
           if [ -f cpp/build/Release/trak_interop.exe ]; then cpp=cpp/build/Release/trak_interop.exe; fi
           python conformance/crosscheck.py --seeds 200 \
             --impl python="python python/tests/interop.py" \
-            --impl go=go/interop \
+            --impl go=go/interop$(cd go && go env GOEXE) \
             --impl cpp=$cpp
 
   readme:
