@@ -101,7 +101,8 @@ def main(argv: list[str]) -> int:
             out["check"] = None
         except trak.TrakError as e:
             out["check"] = str(e)
-        sys.stdout.write(json.dumps(out, ensure_ascii=False) + "\n")
+        # Bytes, not text: the Windows console encoding can't hold every string.
+        sys.stdout.buffer.write(json.dumps(out, ensure_ascii=False).encode() + b"\n")
         return 0
     sys.stderr.write("usage: interop.py write OPS OUT | interop.py read FILE\n")
     return 2
