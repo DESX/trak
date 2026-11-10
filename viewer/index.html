@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>trak viewer</title>
+<link rel="stylesheet" href="style.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%23345'/%3E%3Cpath d='M3 4h10M3 8h7M3 12h10' stroke='%23fff' stroke-width='1.6'/%3E%3C/svg%3E">
+</head>
+<body>
+<header class="top">
+  <button id="home" class="brand" title="Files">trak</button>
+  <span id="file-name" class="file-name"></span>
+  <span class="grow"></span>
+  <button id="follow" hidden title="Check for appended events every 2 seconds">Follow</button>
+  <button id="validate" hidden title="Check every object in the file">Validate</button>
+  <label class="button">Open file<input id="pick" type="file" accept=".trak,application/octet-stream,text/plain" hidden></label>
+</header>
+<div class="layout">
+  <nav id="types" aria-label="Types"></nav>
+  <main id="main"></main>
+</div>
+<footer id="status" class="status" role="status"></footer>
+<div class="drop-hint">Drop a .trak file to open it</div>
+<script type="module" src="app.js"></script>
+</body>
+</html>

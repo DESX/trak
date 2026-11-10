@@ -1,0 +1,12 @@
+{
+  "name": "trak-viewer-test",
+  "private": true,
+  "type": "module",
+  "description": "End-to-end tests for the trak viewer (test-only dependencies)",
+  "scripts": {
+    "test": "node --test e2e.test.js"
+  },
+  "devDependencies": {
+    "playwright": "1.62.1"
+  }
+}
