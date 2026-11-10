@@ -8,7 +8,7 @@ The spec and the libraries share one version number.
 
 ## [Unreleased]
 
-## [1.1.0] - unreleased
+## [1.1.0] - 2026-11-10
 
 The first release. Version 1.0.0 was never released; its changes are folded in
 here.
