@@ -3,7 +3,9 @@ package trak
 import (
 	"bytes"
 	"errors"
+	"slices"
 	"strconv"
+	"strings"
 )
 
 // Check validates a whole file and returns its number of objects. It fails on
@@ -25,21 +27,26 @@ func Check(path string) (int, error) {
 		}
 		return 0, formatErr(r.End(), "ignored tail has an invalid footer: %v", r.TailErr)
 	}
-	c := &checker{r: r, buf: r.buf, types: map[string]*checkType{}}
+	c := &checker{r: r, buf: r.buf, types: map[string]*checkType{}, schemas: map[string]*Schema{}}
 	return c.run()
 }
 
 type checkType struct {
 	schema *Schema
 	ends   []int64 // end offset of node 0, 1, 2, ...
-	lastMs int64
-	hasTs  bool
+	// The family's latest timestamp, kept on its root.
+	lastMs      int64
+	hasTs       bool
+	familyCount uint64
+	hasChild    bool
+	lineage     []*checkType // root first, ending with this type
 }
 
 type checker struct {
 	r             *Reader
 	buf           []byte
 	types         map[string]*checkType
+	schemas       map[string]*Schema
 	order         []*checkType
 	lastSchemaEnd int64
 }
@@ -96,21 +103,38 @@ func (c *checker) schema(f *footer) error {
 	if !bytes.HasSuffix(body, []byte("\n")) {
 		return formatErr(f.fstart, "schema body must end with LF")
 	}
-	major, minor, _ := bytes.Cut([]byte(f.stamp), []byte("."))
-	if string(major) != "1" {
+	major, minor, _ := strings.Cut(f.stamp, ".")
+	if major != "1" {
 		return formatErr(f.fstart, "unsupported schema version %s", f.stamp)
+	}
+	// 1.0 and 1.1 are parsed strictly, newer minors leniently (DECISIONS I5).
+	strict := minor == "0" || minor == "1"
+	var parent *checkType
+	if name := parentName(f.name, f.stamp); name != "" {
+		if parent = c.types[name]; parent == nil {
+			return formatErr(f.fstart, "schema %s comes before its parent %s", f.name, name)
+		}
+		parent.hasChild = true
+		if parent.schema.Root == nil {
+			strict = false // the child's object can't be known either
+		}
 	}
 	for i, b := range body {
 		if b >= 0x80 {
 			return formatErr(f.start+int64(i), "schema is not ASCII")
 		}
 	}
-	schema, err := buildSchema(f.name, int(f.num), f.stamp, string(body), string(minor) == "0")
+	schema, err := buildSchema(f.name, int(f.num), f.stamp, string(body), strict, c.schemas)
 	if err != nil {
 		return formatErr(f.start, "schema %s: %v", f.name, err)
 	}
 	t := &checkType{schema: schema, ends: []int64{f.end}}
+	if parent != nil {
+		t.lineage = append(t.lineage, parent.lineage...)
+	}
+	t.lineage = append(t.lineage, t)
 	c.types[f.name] = t
+	c.schemas[f.name] = schema
 	c.order = append(c.order, t)
 	c.lastSchemaEnd = f.end
 	return nil
@@ -130,8 +154,25 @@ func (c *checker) event(f *footer) error {
 		return formatErr(f.fstart, "invalid timestamp %s", f.stamp)
 	}
 	ms := toMillis(ts)
-	if t.hasTs && ms < t.lastMs {
-		return formatErr(f.fstart, "%s timestamp goes backwards", f.name)
+	family := t.lineage[0]
+	if family.hasTs && ms < family.lastMs {
+		what := f.name
+		if family.hasChild {
+			what = "family " + family.schema.Name
+		}
+		return formatErr(f.fstart, "%s timestamp goes backwards", what)
+	}
+	levels := t.lineage
+	if !t.hasChild {
+		levels = levels[:len(levels)-1]
+	}
+	want := make([]uint64, len(levels))
+	for i, a := range levels {
+		want[i] = a.familyCount + 1
+	}
+	got := f.vlqs[6 : 6+min(f.vlqs[5], uint64(len(want)))]
+	if !slices.Equal(got, want) {
+		return formatErr(f.fstart, "%s family numbers are %v, expected %v", f.name, got, want)
 	}
 	if err := c.pointer(f, f.vlqs[1], t.ends[n-1], "step"); err != nil {
 		return err
@@ -161,7 +202,10 @@ func (c *checker) event(f *footer) error {
 		}
 	}
 	t.ends = append(t.ends, f.end)
-	t.lastMs, t.hasTs = ms, true
+	family.lastMs, family.hasTs = ms, true
+	for _, a := range t.lineage {
+		a.familyCount++
+	}
 	return nil
 }
 

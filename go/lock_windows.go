@@ -30,3 +30,6 @@ func lockFile(f *os.File) error {
 	}
 	return nil
 }
+
+// syncDir does nothing: Windows has no directory fsync.
+func syncDir(string) error { return nil }

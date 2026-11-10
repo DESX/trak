@@ -90,7 +90,7 @@ func TestReaderOnSpecExample(t *testing.T) {
 	os.WriteFile(p, specExample(t), 0o644)
 	r := must(Open(p))
 	defer r.Close()
-	if r.Version() != "1.0" || len(r.Types()) != 2 || r.End() != r.Size() {
+	if r.Version() != "1.1" || len(r.Types()) != 2 || r.End() != r.Size() {
 		t.Fatal("header")
 	}
 	builds := must(r.Table("build"))
@@ -266,8 +266,8 @@ func TestValueErrors(t *testing.T) {
 			t.Errorf("%v: got %v, want %q", c.v, err, c.msg)
 		}
 	}
-	if n := must(w.Write("t", map[string]any{"x": 1})); n != 1 {
-		t.Fatal(n)
+	if p := must(w.Write("t", map[string]any{"x": 1})); p.N != 1 {
+		t.Fatal(p)
 	}
 	if _, err := w.Write("nope", nil); err == nil {
 		t.Fatal("undefined type")

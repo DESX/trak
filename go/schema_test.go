@@ -19,7 +19,7 @@ const buildSchemaText = `// One CI build run.
 `
 
 func TestSchemaSpecExample(t *testing.T) {
-	s, err := buildSchema("build", 1, "1.0", buildSchemaText, true)
+	s, err := buildSchema("build", 1, "1.0", buildSchemaText, true, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -74,7 +74,7 @@ func TestSchemaBinding(t *testing.T) {
 
 func TestSchemaDescriptions(t *testing.T) {
 	text := "// Line one.\n//\n// Line three.\n{\n  a: str, b: str, // b\n  // ignored\n  c: { // c\n    d: str, // d\n  },\n  e: str, //\n}\n"
-	s, err := buildSchema("t", 1, "1.0", text, true)
+	s, err := buildSchema("t", 1, "1.0", text, true, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -91,15 +91,15 @@ func TestSchemaDescriptions(t *testing.T) {
 }
 
 func TestSchemaUnknownLeaves(t *testing.T) {
-	s, _ := buildSchema("t", 1, "1.1", "{ a: si.meter, b: |vec(3)? }", false)
+	s, _ := buildSchema("t", 1, "1.1", "{ a: si.meter, b: |vec(3)? }", false, nil)
 	if s.Err != nil || s.Fields[0].Unknown != "si.meter" || s.Fields[1].Unknown != "vec(3)" || !s.Fields[1].Block {
 		t.Fatalf("%+v %v", s.Fields, s.Err)
 	}
-	if _, err := buildSchema("t", 1, "1.0", "{ a: foo }", true); err == nil {
+	if _, err := buildSchema("t", 1, "1.0", "{ a: foo }", true, nil); err == nil {
 		t.Fatal("strict should reject unknown leaves")
 	}
 	for _, v := range []string{"2.0", "1.00", "01.0"} {
-		if s, _ := buildSchema("t", 1, v, "{}", false); s.Root != nil || s.Err == nil {
+		if s, _ := buildSchema("t", 1, v, "{}", false, nil); s.Root != nil || s.Err == nil {
 			t.Errorf("version %s should be unparseable", v)
 		}
 	}

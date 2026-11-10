@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"slices"
 
 	"github.com/desx/trak/go"
 )
@@ -81,12 +82,13 @@ func Decode(path string) (map[string]any, error) {
 			})
 		}
 		types = append(types, map[string]any{
-			"name": s.Name, "index": s.Index, "version": s.Version,
+			"name": s.Name, "index": s.Index, "version": s.Version, "parent": nullable(s.Parent),
 			"description": nullable(s.Description), "parsed": s.Root != nil,
 			"annotations": annotations(s.Annotations()), "fields": fields,
 		})
 	}
 	events := []any{}
+	var scanned []scan
 	counts := map[string]int64{}
 	var werr error
 	err = r.Events(func(e *trak.Event) bool {
@@ -99,9 +101,19 @@ func Decode(path string) (map[string]any, error) {
 			}
 			value = Native(obj)
 		}
+		families := map[string]any{}
+		for _, a := range e.Schema.Lineage {
+			num, err := e.FamilyNumber(a)
+			if err != nil {
+				werr = err
+				return false
+			}
+			families[a] = num
+		}
 		events = append(events, map[string]any{
-			"type": e.Type(), "n": e.N(), "timestamp": e.Timestamp(), "value": value,
+			"type": e.Type(), "n": e.N(), "timestamp": e.Timestamp(), "families": families, "value": value,
 		})
+		scanned = append(scanned, scan{e.Type(), e.N(), e.Schema.Lineage, families})
 		counts[e.Type()]++
 		return true
 	})
@@ -129,8 +141,115 @@ func Decode(path string) (map[string]any, error) {
 				return nil, fmt.Errorf("%s: get(%d) returned %d", s.Name, n, e.N())
 			}
 		}
+		if err := checkFamily(r, s, scanned); err != nil {
+			return nil, err
+		}
+	}
+	if err := checkPages(r, scanned); err != nil {
+		return nil, err
 	}
 	return map[string]any{"types": types, "events": events}, nil
+}
+
+// scan is one event as seen by the file-order scan.
+type scan struct {
+	typ      string
+	n        int64
+	lineage  []string
+	families map[string]any
+}
+
+func (s scan) String() string { return fmt.Sprintf("%s %d", s.typ, s.n) }
+
+func same(e *trak.Event, s scan) bool { return e.Type() == s.typ && e.N() == s.n }
+
+// checkFamily checks that a type's family table agrees with the scan.
+func checkFamily(r *trak.Reader, s *trak.Schema, scanned []scan) error {
+	fam, err := r.Family(s.Name)
+	if err != nil {
+		return err
+	}
+	var members []scan
+	for _, e := range scanned {
+		if slices.Contains(e.lineage, s.Name) {
+			members = append(members, e)
+		}
+	}
+	count, err := fam.Count()
+	if err != nil {
+		return err
+	}
+	if count != int64(len(members)) {
+		return fmt.Errorf("family %s: count %d, scanned %d", s.Name, count, len(members))
+	}
+	for i, row := range members {
+		m := int64(i + 1)
+		if row.families[s.Name] != m {
+			return fmt.Errorf("family %s: %v has number %v, expected %d", s.Name, row, row.families[s.Name], m)
+		}
+		e, err := fam.Get(m)
+		if err != nil {
+			return err
+		}
+		if !same(e, row) {
+			return fmt.Errorf("family %s: get(%d) returned %s %d, expected %v", s.Name, m, e.Type(), e.N(), row)
+		}
+	}
+	if count == 0 {
+		return nil
+	}
+	i := 0
+	err = fam.Range(1, count, func(e *trak.Event) bool {
+		if i >= len(members) || !same(e, members[i]) {
+			err = fmt.Errorf("family %s: row %d of the range is %s %d", s.Name, i+1, e.Type(), e.N())
+			return false
+		}
+		i++
+		return true
+	})
+	if err == nil && i != len(members) {
+		err = fmt.Errorf("family %s: range yielded %d rows, expected %d", s.Name, i, len(members))
+	}
+	return err
+}
+
+// checkPages checks that paging with cursors visits every event once, in
+// file order.
+func checkPages(r *trak.Reader, scanned []scan) error {
+	for _, forward := range []bool{true, false} {
+		var got []*trak.Event
+		cursor := int64(-1)
+		for {
+			var page []*trak.Event
+			var err error
+			if forward {
+				page, err = r.After(cursor, 3)
+			} else {
+				page, err = r.Before(cursor, 4)
+			}
+			if err != nil {
+				return err
+			}
+			if len(page) == 0 {
+				break
+			}
+			got = append(got, page...)
+			cursor = page[len(page)-1].Offset()
+		}
+		if len(got) != len(scanned) {
+			return fmt.Errorf("paging (forward %v) found %d events, scanned %d", forward, len(got), len(scanned))
+		}
+		for i, e := range got {
+			want := scanned[i]
+			if !forward {
+				want = scanned[len(scanned)-1-i]
+			}
+			if !same(e, want) {
+				return fmt.Errorf("paging (forward %v): event %d is %s %d, expected %v", forward, i, e.Type(), e.N(), want)
+			}
+		}
+	}
+	return nil
 }
 
 type op struct {

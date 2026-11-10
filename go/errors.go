@@ -70,4 +70,7 @@ var (
 	ErrClosed = errors.New("trak: closed")
 	// ErrNotFound is returned for an unknown type or event number.
 	ErrNotFound = errors.New("trak: not found")
+	// ErrBadCursor is returned by Reader.Before and Reader.After for a cursor
+	// that isn't where an object of the file starts.
+	ErrBadCursor = errors.New("trak: bad cursor")
 )

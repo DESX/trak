@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func FuzzSchemaParser(f *testing.F) {
@@ -52,6 +53,29 @@ func FuzzReader(f *testing.F) {
 				}
 			}
 		}
-		r.Events(func(e *Event) bool { e.Native(); return true })
+		r.Events(func(e *Event) bool { e.Native(); e.FamilyNumber(""); e.Prev(); return true })
+		for _, s := range r.Types() {
+			fam, _ := r.Family(s.Name)
+			if count, err := fam.Count(); err == nil && count > 0 {
+				fam.Get(count)
+				fam.Range(1, min(count, 50), func(*Event) bool { return true })
+				fam.AtTime(time.UnixMilli(0))
+			}
+		}
+		for _, forward := range []bool{true, false} {
+			cursor := int64(-1)
+			for i := 0; i < 20; i++ {
+				var page []*Event
+				if forward {
+					page, err = r.After(cursor, 3)
+				} else {
+					page, err = r.Before(cursor, 3)
+				}
+				if err != nil || len(page) == 0 {
+					break
+				}
+				cursor = page[len(page)-1].Offset()
+			}
+		}
 	})
 }

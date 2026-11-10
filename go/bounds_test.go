@@ -77,6 +77,74 @@ func TestNavigationBounds(t *testing.T) {
 	if total != int64(n) {
 		t.Fatalf("total %d", total)
 	}
+
+	// Seeks read at most two footers per step of the walk to their node.
+	tab := must(r.Table("t0"))
+	count := must(tab.Count())
+	seekBound := int(2 * (3*math.Log2(float64(count)) + 4))
+	for _, ts := range []string{"20000101T000000.000Z", "20991231T000000.000Z"} {
+		clear(r.cache)
+		clear(r.oldCache)
+		if got := reads(func() { must(tab.AtTime(mustTime(ts))) }); got > seekBound {
+			t.Errorf("at time %s read %d footers, bound %d", ts, got, seekBound)
+		}
+	}
+	for _, m := range randomNs(rng, count, 50) {
+		target := must(tab.Get(m)).Offset()
+		clear(r.cache)
+		clear(r.oldCache)
+		var found *footer
+		if got := reads(func() { found = must(r.seek(tab.Schema, startKey, target)) }); got > seekBound {
+			t.Errorf("seek to %d read %d footers, bound %d", target, got, seekBound)
+		}
+		if found == nil || found.start != target {
+			t.Fatalf("seek to %d found %v", target, found)
+		}
+	}
+}
+
+// TestFamilyRowBounds asserts that family row m costs O(k log n) reads.
+func TestFamilyRowBounds(t *testing.T) {
+	const kids = 5
+	n := 250_000
+	if testing.Short() {
+		n = 25_000
+	}
+	p := filepath.Join(t.TempDir(), "family.trak")
+	w := must(Create(p, Options{}))
+	must(w.Define("root", "{ i: num }"))
+	for k := 0; k < kids; k++ {
+		must(w.Define(fmt.Sprintf("root.k%d", k), "{}"))
+	}
+	must(w.Define("other", "{ i: num }"))
+	rng := rand.New(rand.NewSource(8))
+	for i := 0; i < n; i++ {
+		name := fmt.Sprintf("root.k%d", rng.Intn(kids+2))
+		switch name {
+		case fmt.Sprintf("root.k%d", kids):
+			name = "root"
+		case fmt.Sprintf("root.k%d", kids+1):
+			name = "other"
+		}
+		must(w.WriteAt(name, map[string]any{"i": i}, mustTime(fmt.Sprintf("20261107T%02d0000.000Z", i/3600000%24))))
+	}
+	ok(t, w.Close())
+
+	r := must(Open(p))
+	defer r.Close()
+	f := must(r.Family("root"))
+	rows := must(f.Count())
+	k := len(f.Types())
+	bound := int(float64(k) * 2 * (3*math.Log2(float64(rows)) + 4))
+	for _, m := range append([]int64{1, rows}, randomNs(rng, rows, 100)...) {
+		clear(r.cache)
+		clear(r.oldCache)
+		before := r.FooterReads
+		must(f.Get(m))
+		if got := r.FooterReads - before; got > bound {
+			t.Errorf("family row %d read %d footers, bound %d", m, got, bound)
+		}
+	}
 }
 
 func randomNs(rng *rand.Rand, count int64, k int) []int64 {

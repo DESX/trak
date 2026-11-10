@@ -80,6 +80,11 @@ type Field struct {
 
 // Schema is a type's schema. Root is nil when the definition can't be parsed;
 // Err then says why.
+//
+// A child type (build.step in a schema declaring 1.1 or later) has its
+// parent's name in Parent, and its Root and Fields start with the parent's.
+// Lineage names the type's families, root first and the type itself last
+// (SPEC §5, §6).
 type Schema struct {
 	Name        string
 	Index       int
@@ -89,6 +94,8 @@ type Schema struct {
 	Root        *Type
 	Fields      []Field
 	Err         error
+	Parent      string // "" when the type has no parent
+	Lineage     []string
 }
 
 // Annotations returns the annotations on the event's top-level object.
@@ -135,24 +142,77 @@ func ParseDefinition(text string, strict bool) (*Type, string, error) {
 	return p.parse()
 }
 
-func buildSchema(name string, index int, version, text string, strict bool) (*Schema, error) {
-	s := &Schema{Name: name, Index: index, Version: version, Text: text}
-	major, _, ok := strings.Cut(version, ".")
+// parentName returns the parent a type of this name and schema version has,
+// or "" (SPEC §5: only schemas declaring 1.1 or later have children).
+func parentName(name, version string) string {
+	major, minor, _ := strings.Cut(version, ".")
+	if !canonicalVersion([]byte(version)) || major != "1" || minor == "0" {
+		return ""
+	}
+	i := strings.LastIndexByte(name, '.')
+	if i < 0 {
+		return ""
+	}
+	return name[:i]
+}
+
+// buildSchema parses text into a Schema. When not strict, parse failures are
+// kept in Err. types holds the schemas defined before this one, for finding a
+// child's parent.
+func buildSchema(name string, index int, version, text string, strict bool, types map[string]*Schema) (*Schema, error) {
+	s := &Schema{Name: name, Index: index, Version: version, Text: text, Parent: parentName(name, version)}
+	s.Lineage = []string{name}
+	var p *Schema
 	var err error
-	if !ok || major != "1" || !canonicalVersion([]byte(version)) {
+	if s.Parent != "" {
+		if p = types[s.Parent]; p == nil {
+			err = &SchemaError{Msg: fmt.Sprintf("parent type '%s' must be defined before '%s'", s.Parent, name)}
+		} else {
+			s.Lineage = append(append(make([]string, 0, len(p.Lineage)+1), p.Lineage...), name)
+		}
+	}
+	major, _, ok := strings.Cut(version, ".")
+	switch {
+	case err != nil: // the parent is missing
+	case !ok || major != "1" || !canonicalVersion([]byte(version)):
 		err = &SchemaError{Msg: "unsupported schema version " + version}
-	} else {
+	default:
 		s.Root, s.Description, err = ParseDefinition(text, strict)
+	}
+	if err == nil && p != nil {
+		s.Root, err = inherit(p, s.Root, text)
 	}
 	if err != nil {
 		if strict {
 			return nil, err
 		}
-		s.Root, s.Err = nil, err
+		s.Root, s.Description, s.Err = nil, "", err
 		return s, nil
 	}
 	s.Fields = flatten(s.Root)
 	return s, nil
+}
+
+// inherit returns a child's top-level object: its parent's members, then its
+// own. A key the parent already has is an error.
+func inherit(p *Schema, root *Type, text string) (*Type, error) {
+	if p.Root == nil {
+		return nil, &SchemaError{Msg: fmt.Sprintf("parent type '%s' can't be parsed", p.Name)}
+	}
+	inherited := make(map[string]bool, len(p.Root.Members))
+	for _, m := range p.Root.Members {
+		inherited[m.Key] = true
+	}
+	for _, m := range root.Members {
+		if inherited[m.Key] {
+			col := m.pos - strings.LastIndexByte(text[:m.pos], '\n')
+			return nil, &SchemaError{Msg: fmt.Sprintf("key '%s' is already defined by '%s'", m.Key, p.Name),
+				Line: m.line, Column: col}
+		}
+	}
+	members := make([]Member, 0, len(p.Root.Members)+len(root.Members))
+	members = append(append(members, p.Root.Members...), root.Members...)
+	return &Type{Kind: KindObject, Members: members, Optional: root.Optional, Annotations: root.Annotations}, nil
 }
 
 func flatten(root *Type) []Field {

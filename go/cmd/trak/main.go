@@ -2,7 +2,7 @@
 //
 //	trak types FILE
 //	trak schema FILE TYPE
-//	trak cat FILE TYPE [--from n] [--to n] [--last k] [--since ts]
+//	trak cat FILE TYPE [--family] [--from n] [--to n] [--last k] [--since ts]
 //	trak export FILE [TYPE] [--format jsonl]
 //	trak tail -f FILE [TYPE] [--format jsonl]
 //	trak check FILE
@@ -27,8 +27,9 @@ import (
 const usage = `usage:
   trak types FILE                       list types with counts and descriptions
   trak schema FILE TYPE                 print a type's definition and fields
-  trak cat FILE TYPE [--from n] [--to n] [--last k] [--since ts]
-                                        print events as an aligned table
+  trak cat FILE TYPE [--family] [--from n] [--to n] [--last k] [--since ts]
+                                        print events as an aligned table; with
+                                        --family, the type and its descendants
   trak export FILE [TYPE] [--format jsonl]
                                         print one JSON object per event
   trak tail -f FILE [TYPE] [--format jsonl]
@@ -48,9 +49,10 @@ type args struct {
 	flags map[string]string
 }
 
-// parseArgs separates --name value, --name=value and bare -f flags from
-// positional arguments, which may come in any order.
-func parseArgs(in []string, valued map[string]bool) (args, error) {
+// parseArgs separates --name value, --name=value and bare --name flags from
+// positional arguments, which may come in any order. flags maps each known
+// flag name to whether it takes a value.
+func parseArgs(in []string, flags map[string]bool) (args, error) {
 	a := args{flags: map[string]string{}}
 	for i := 0; i < len(in); i++ {
 		s := in[i]
@@ -59,17 +61,18 @@ func parseArgs(in []string, valued map[string]bool) (args, error) {
 			continue
 		}
 		name, value, hasValue := strings.Cut(strings.TrimLeft(s, "-"), "=")
-		if valued[name] && !hasValue {
+		valued, known := flags[name]
+		switch {
+		case !known:
+			return a, fmt.Errorf("%w: unknown flag %s", errUsage, s)
+		case valued && !hasValue:
 			if i+1 >= len(in) {
 				return a, fmt.Errorf("%w: --%s needs a value", errUsage, name)
 			}
 			i++
 			value = in[i]
-		} else if !valued[name] && hasValue {
-			return a, fmt.Errorf("%w: unknown flag %s", errUsage, s)
-		}
-		if !valued[name] && name != "f" && name != "follow" {
-			return a, fmt.Errorf("%w: unknown flag %s", errUsage, s)
+		case !valued && hasValue:
+			return a, fmt.Errorf("%w: --%s takes no value", errUsage, name)
 		}
 		a.flags[name] = value
 	}
@@ -89,13 +92,13 @@ func run(argv []string, stdout, stderr io.Writer) int {
 	case "schema":
 		err = withPositional(rest, 2, 2, nil, func(a args) error { return schema(stdout, a.pos[0], a.pos[1]) })
 	case "cat":
-		err = withPositional(rest, 2, 2, map[string]bool{"from": true, "to": true, "last": true, "since": true},
+		err = withPositional(rest, 2, 2,
+			map[string]bool{"from": true, "to": true, "last": true, "since": true, "family": false},
 			func(a args) error { return cat(stdout, a) })
 	case "export":
 		err = withPositional(rest, 1, 2, map[string]bool{"format": true}, func(a args) error { return export(stdout, a) })
 	case "tail":
-		err = withPositional(rest, 1, 2, map[string]bool{"format": true, "interval": true},
-			func(a args) error { return tail(stdout, a, nil) })
+		err = withPositional(rest, 1, 2, tailFlags, func(a args) error { return tail(stdout, a, nil) })
 	case "check":
 		var n int
 		err = withPositional(rest, 1, 1, nil, func(a args) error {
@@ -122,6 +125,8 @@ func run(argv []string, stdout, stderr io.Writer) int {
 	}
 	return 0
 }
+
+var tailFlags = map[string]bool{"format": true, "interval": true, "f": false, "follow": false}
 
 func withPositional(argv []string, min, max int, valued map[string]bool, fn func(args) error) error {
 	a, err := parseArgs(argv, valued)
@@ -166,14 +171,18 @@ func types(out io.Writer, path string) error {
 	}
 	defer r.Close()
 	tw, flush := table(out)
-	fmt.Fprintln(tw, "INDEX\tNAME\tVERSION\tEVENTS\tDESCRIPTION")
+	fmt.Fprintln(tw, "INDEX\tNAME\tVERSION\tPARENT\tEVENTS\tDESCRIPTION")
 	for _, s := range r.Types() {
 		t, _ := r.Table(s.Name)
 		n, err := t.Count()
 		if err != nil {
 			return err
 		}
-		fmt.Fprintf(tw, "%d\t%s\t%s\t%d\t%s\n", s.Index, s.Name, s.Version, n, firstLine(s.Description))
+		parent := s.Parent
+		if parent == "" {
+			parent = "-"
+		}
+		fmt.Fprintf(tw, "%d\t%s\t%s\t%s\t%d\t%s\n", s.Index, s.Name, s.Version, parent, n, firstLine(s.Description))
 	}
 	return flush()
 }
@@ -244,12 +253,9 @@ func intFlag(a args, name string) (int64, bool, error) {
 	return n, true, nil
 }
 
-// rows works out the event range [a, b] that cat should print.
-func rows(t *trak.Table, a args) (int64, int64, error) {
-	count, err := t.Count()
-	if err != nil {
-		return 0, 0, err
-	}
+// rows works out the row range [a, b] that cat should print, given the row
+// count and a seek by time that returns a row number (0 for none).
+func rows(count int64, atTime func(time.Time) (int64, error), a args) (int64, int64, error) {
 	lo, hi := int64(1), count
 	if v, ok, err := intFlag(a, "from"); err != nil {
 		return 0, 0, err
@@ -266,14 +272,14 @@ func rows(t *trak.Table, a args) (int64, int64, error) {
 		if err != nil {
 			return 0, 0, err
 		}
-		e, err := t.AtTime(ts)
+		m, err := atTime(ts)
 		if err != nil {
 			return 0, 0, err
 		}
-		if e == nil {
+		if m == 0 {
 			return 1, 0, nil
 		}
-		lo = max(lo, e.N())
+		lo = max(lo, m)
 	}
 	if v, ok, err := intFlag(a, "last"); err != nil {
 		return 0, 0, err
@@ -289,11 +295,24 @@ func cat(out io.Writer, a args) error {
 		return err
 	}
 	defer r.Close()
+	if _, ok := a.flags["family"]; ok {
+		return catFamily(out, r, a)
+	}
 	t, err := r.Table(a.pos[1])
 	if err != nil {
 		return err
 	}
-	lo, hi, err := rows(t, a)
+	count, err := t.Count()
+	if err != nil {
+		return err
+	}
+	lo, hi, err := rows(count, func(ts time.Time) (int64, error) {
+		e, err := t.AtTime(ts)
+		if e == nil || err != nil {
+			return 0, err
+		}
+		return e.N(), nil
+	}, a)
 	if err != nil {
 		return err
 	}
@@ -316,6 +335,79 @@ func cat(out io.Writer, a args) error {
 					return false
 				}
 				row = append(row, cells(s.Root, obj, len(s.Fields))...)
+			}
+			fmt.Fprintln(tw, strings.Join(row, "\t"))
+			return true
+		})
+		if err != nil {
+			return err
+		}
+	}
+	return flush()
+}
+
+// catFamily prints a family table (SPEC §12): its rows in file order, with
+// the family type's leaf columns and each descendant's own leaves added.
+func catFamily(out io.Writer, r *trak.Reader, a args) error {
+	fam, err := r.Family(a.pos[1])
+	if err != nil {
+		return err
+	}
+	count, err := fam.Count()
+	if err != nil {
+		return err
+	}
+	lo, hi, err := rows(count, func(ts time.Time) (int64, error) {
+		e, err := fam.AtTime(ts)
+		if e == nil || err != nil {
+			return 0, err
+		}
+		return e.FamilyNumber(fam.Name())
+	}, a)
+	if err != nil {
+		return err
+	}
+	// Columns by path, in order of first appearance. A child's fields start
+	// with its parent's, so only its own leaves add columns.
+	var paths []string
+	column := map[string]int{}
+	columns := map[string][]int{} // per type: each field's column
+	for _, s := range fam.Types() {
+		cols := make([]int, len(s.Fields))
+		for i, f := range s.Fields {
+			c, ok := column[f.Path]
+			if !ok {
+				c = len(paths)
+				column[f.Path] = c
+				paths = append(paths, f.Path)
+			}
+			cols[i] = c
+		}
+		columns[s.Name] = cols
+	}
+	tw, flush := table(out)
+	fmt.Fprintln(tw, strings.Join(append([]string{"N", "TYPE", "TIMESTAMP"}, paths...), "\t"))
+	if lo <= hi {
+		err = fam.Range(lo, hi, func(e *trak.Event) bool {
+			m, ferr := e.FamilyNumber(fam.Name())
+			if ferr != nil {
+				err = ferr
+				return false
+			}
+			row := []string{strconv.FormatInt(m, 10), e.Type(), e.Timestamp()}
+			if s := e.Schema; s.Root == nil {
+				row = append(row, "(values unavailable)")
+			} else {
+				obj, werr := e.Native()
+				if werr != nil {
+					err = werr
+					return false
+				}
+				vals := make([]string, len(paths))
+				for i, v := range cells(s.Root, obj, len(s.Fields)) {
+					vals[columns[s.Name][i]] = v
+				}
+				row = append(row, vals...)
 			}
 			fmt.Fprintln(tw, strings.Join(row, "\t"))
 			return true
@@ -474,7 +566,19 @@ func appendValue(dst []byte, v any) []byte {
 
 func eventJSON(e *trak.Event) ([]byte, error) {
 	name, _ := json.Marshal(e.Type())
-	dst := fmt.Appendf(nil, `{"type":%s,"n":%d,"timestamp":"%s","value":`, name, e.N(), e.Timestamp())
+	dst := fmt.Appendf(nil, `{"type":%s,"n":%d,"timestamp":"%s","families":{`, name, e.N(), e.Timestamp())
+	for i, a := range e.Schema.Lineage {
+		num, err := e.FamilyNumber(a)
+		if err != nil {
+			return nil, err
+		}
+		if i > 0 {
+			dst = append(dst, ',')
+		}
+		b, _ := json.Marshal(a)
+		dst = fmt.Appendf(dst, "%s:%d", b, num)
+	}
+	dst = append(dst, `},"value":`...)
 	if e.Schema.Root == nil {
 		dst = append(dst, "null"...)
 	} else {

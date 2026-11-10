@@ -26,6 +26,9 @@ type Reader struct {
 	schemas   []*Schema
 	byName    map[string]*Schema
 	schemaFts []*footer
+	// childFrom is where each type's first child schema ends: from there on,
+	// its events carry their number in its own family (SPEC §6).
+	childFrom map[string]int64
 
 	strings map[string]string // interned type names and leaf paths
 
@@ -87,9 +90,15 @@ func (r *Reader) load() error {
 	r.latest = map[int]*footer{}
 	r.schemas = make([]*Schema, len(r.schemaFts))
 	r.byName = make(map[string]*Schema, len(r.schemaFts))
+	r.childFrom = map[string]int64{}
+	// In index order, so that children find their parents.
 	for i, f := range r.schemaFts {
-		r.schemas[i], _ = buildSchema(f.name, i+1, f.stamp, string(r.buf[f.start:f.fstart]), false)
-		r.byName[f.name] = r.schemas[i]
+		s, _ := buildSchema(f.name, i+1, f.stamp, string(r.buf[f.start:f.fstart]), false, r.byName)
+		r.schemas[i] = s
+		r.byName[f.name] = s
+		if _, seen := r.childFrom[s.Parent]; s.Parent != "" && !seen {
+			r.childFrom[s.Parent] = f.end
+		}
 	}
 	return nil
 }
@@ -171,6 +180,34 @@ func (r *Reader) Table(name string) (*Table, error) {
 	return &Table{r: r, Schema: s}, nil
 }
 
+// Family returns the events of the named type and all its descendants, in
+// file order (SPEC §1).
+func (r *Reader) Family(name string) (*Family, error) {
+	s, err := r.Schema(name)
+	if err != nil {
+		return nil, err
+	}
+	fam := &Family{r: r, schema: s}
+	for _, t := range r.schemas {
+		for _, a := range t.Lineage {
+			if a == name {
+				fam.types = append(fam.types, t)
+				break
+			}
+		}
+	}
+	return fam, nil
+}
+
+// event returns the Event for an event footer.
+func (r *Reader) event(f *footer) (*Event, error) {
+	s := r.byName[f.name]
+	if s == nil {
+		return nil, formatErr(f.fstart, "event of type %q has no schema", f.name)
+	}
+	return &Event{r: r, Schema: s, f: f}, nil
+}
+
 // Events calls yield for every event in file order, until yield returns false.
 func (r *Reader) Events(yield func(*Event) bool) error {
 	var footers []*footer
@@ -187,11 +224,11 @@ func (r *Reader) Events(yield func(*Event) bool) error {
 		if f.schema {
 			continue
 		}
-		s := r.byName[f.name]
-		if s == nil {
-			return formatErr(f.fstart, "event of type %q has no schema", f.name)
+		e, err := r.event(f)
+		if err != nil {
+			return err
 		}
-		if !yield(&Event{r: r, Schema: s, f: f}) {
+		if !yield(e) {
 			return nil
 		}
 	}
@@ -204,11 +241,11 @@ func (r *Reader) EventsBackward(yield func(*Event) bool) error {
 	f, err := r.last()
 	for err == nil && f != nil {
 		if !f.schema {
-			s := r.byName[f.name]
-			if s == nil {
-				return formatErr(f.fstart, "event of type %q has no schema", f.name)
+			e, err := r.event(f)
+			if err != nil {
+				return err
 			}
-			if !yield(&Event{r: r, Schema: s, f: f}) {
+			if !yield(e) {
 				return nil
 			}
 		}
@@ -323,11 +360,11 @@ func (r *Reader) validateTail(end int64) ([]*footer, error) {
 	if err != nil || f.schema {
 		return chain, err
 	}
-	for _, s := range chain {
+	for i, s := range chain {
 		if s.name != f.name {
 			continue
 		}
-		schema, _ := buildSchema(s.name, int(s.num), s.stamp, string(r.buf[s.start:s.fstart]), false)
+		schema := r.chainSchema(chain[:i+1])
 		if schema.Root != nil {
 			if _, err := newWalk(schema.Root, f.values(), f.start, f.fstart); err != nil {
 				return nil, err
@@ -336,6 +373,26 @@ func (r *Reader) validateTail(end int64) ([]*footer, error) {
 		return chain, nil
 	}
 	return nil, formatErr(f.fstart, "event of type %q has no schema", f.name)
+}
+
+// chainSchema builds the schema of the last footer in chain, after the
+// schemas of its ancestors, which come earlier.
+func (r *Reader) chainSchema(chain []*footer) *Schema {
+	lineage := []*footer{chain[len(chain)-1]}
+	for i := len(chain) - 2; i >= 0; i-- {
+		head := lineage[len(lineage)-1]
+		if chain[i].name == parentName(head.name, head.stamp) {
+			lineage = append(lineage, chain[i])
+		}
+	}
+	types := make(map[string]*Schema, len(lineage))
+	var s *Schema
+	for i := len(lineage) - 1; i >= 0; i-- {
+		f := lineage[i]
+		s, _ = buildSchema(f.name, int(f.num), f.stamp, string(r.buf[f.start:f.fstart]), false, types)
+		types[f.name] = s
+	}
+	return s
 }
 
 // schemaChain returns every schema footer visible from f, in index order:
@@ -419,23 +476,50 @@ func (r *Reader) latestFooter(s *Schema) (*footer, error) {
 
 // navigate walks from node f down to node m of the same type (SPEC §7).
 func (r *Reader) navigate(f *footer, m uint64) (*footer, error) {
-	name := f.name
-	for f.node() > m {
-		j := Jump(f.node())
-		ptr, want := f.vlqs[1], f.node()-1
-		if j >= m {
-			ptr, want = f.vlqs[2], j
-		}
-		next, err := r.follow(f, ptr)
-		if err != nil {
+	var err error
+	for err == nil && f.node() > m {
+		f, err = r.hop(f, Jump(f.node()) >= m)
+	}
+	return f, err
+}
+
+// hop follows f's jump or step pointer, checking that it lands on the right
+// node.
+func (r *Reader) hop(f *footer, jump bool) (*footer, error) {
+	ptr, want := f.vlqs[1], f.node()-1
+	if jump {
+		ptr, want = f.vlqs[2], Jump(f.node())
+	}
+	g, err := r.follow(f, ptr)
+	if err != nil {
+		return nil, err
+	}
+	if g.name != f.name || g.node() != want {
+		return nil, formatErr(f.fstart, "pointer leads to the wrong node (wanted %s %d)", f.name, want)
+	}
+	return g, nil
+}
+
+// footersBetween returns nodes x to y of a type, ascending, for 1 <= x <= y <=
+// the type's count.
+func (r *Reader) footersBetween(s *Schema, x, y int64) ([]*footer, error) {
+	top, err := r.latestFooter(s)
+	if err != nil {
+		return nil, err
+	}
+	f, err := r.navigate(top, uint64(y))
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*footer, y-x+1)
+	out[len(out)-1] = f
+	for i := len(out) - 2; i >= 0; i-- {
+		if f, err = r.navigate(f, f.num-1); err != nil {
 			return nil, err
 		}
-		if next.name != name || next.node() != want {
-			return nil, formatErr(f.fstart, "pointer leads to the wrong node (wanted %s %d)", name, want)
-		}
-		f = next
+		out[i] = f
 	}
-	return f, nil
+	return out, nil
 }
 
 // Table is the events of one type, numbered from 1.
@@ -509,19 +593,12 @@ func (t *Table) Range(a, b int64, yield func(*Event) bool) error {
 	}
 	for lo := a; lo <= b; {
 		hi := min(b, lo+255)
-		f, err := t.footerAt(hi)
+		chunk, err := t.r.footersBetween(t.Schema, lo, hi)
 		if err != nil {
 			return err
 		}
-		chunk := []*footer{f}
-		for int64(f.num) > lo {
-			if f, err = t.r.navigate(f, f.num-1); err != nil {
-				return err
-			}
-			chunk = append(chunk, f)
-		}
-		for i := len(chunk) - 1; i >= 0; i-- {
-			if !yield(&Event{r: t.r, Schema: t.Schema, f: chunk[i]}) {
+		for _, f := range chunk {
+			if !yield(&Event{r: t.r, Schema: t.Schema, f: f}) {
 				return nil
 			}
 		}
@@ -530,34 +607,14 @@ func (t *Table) Range(a, b int64, yield func(*Event) bool) error {
 	return nil
 }
 
-// AtTime returns the first event with timestamp >= ts, or nil.
+// AtTime returns the first event with timestamp >= ts, or nil. It is a seek
+// by timestamp, O(log n) (SPEC §7).
 func (t *Table) AtTime(ts time.Time) (*Event, error) {
-	want := toMillis(ts)
-	count, err := t.Count()
-	if err != nil {
+	f, err := t.r.seek(t.Schema, stampKey, toMillis(ts))
+	if f == nil || err != nil {
 		return nil, err
 	}
-	lo, hi := int64(1), count+1
-	for lo < hi {
-		mid := lo + (hi-lo)/2
-		f, err := t.footerAt(mid)
-		if err != nil {
-			return nil, err
-		}
-		at, err := ParseTimestamp(f.stamp)
-		if err != nil {
-			return nil, formatErr(f.fstart, "%v", err)
-		}
-		if toMillis(at) >= want {
-			hi = mid
-		} else {
-			lo = mid + 1
-		}
-	}
-	if lo > count {
-		return nil, nil
-	}
-	return t.Get(lo)
+	return &Event{r: t.r, Schema: t.Schema, f: f}, nil
 }
 
 // Event is one event. Values are decoded lazily on first access.
@@ -581,8 +638,36 @@ func (e *Event) Timestamp() string { return e.f.stamp }
 // Time is the timestamp as a time.Time in UTC.
 func (e *Event) Time() (time.Time, error) { return ParseTimestamp(e.f.stamp) }
 
-// Offset is the event's first byte in the file.
+// Offset is the event's first byte in the file. It is a cursor for
+// Reader.Before and Reader.After.
 func (e *Event) Offset() int64 { return e.f.start }
+
+// Prev returns the previous event of the same type in one footer read, or
+// nil for event 1.
+func (e *Event) Prev() (*Event, error) {
+	if e.f.num == 1 {
+		return nil, nil
+	}
+	f, err := e.r.hop(e.f, false)
+	if err != nil {
+		return nil, err
+	}
+	return &Event{r: e.r, Schema: e.Schema, f: f}, nil
+}
+
+// FamilyNumber returns the event's row number in a family: its own type or
+// one of its ancestors (SPEC §6). The empty string means the root family.
+func (e *Event) FamilyNumber(family string) (int64, error) {
+	if family == "" {
+		family = e.Schema.Lineage[0]
+	}
+	for _, a := range e.Schema.Lineage {
+		if a == family {
+			return e.r.familyNumber(e.f, family)
+		}
+	}
+	return 0, fmt.Errorf("%w: %s is not in family %q", ErrNotFound, e.f.name, family)
+}
 
 func (e *Event) walk() (*walk, error) {
 	if e.w != nil {

@@ -21,12 +21,51 @@ func runCLI(t *testing.T, args ...string) (string, string, int) {
 
 func TestTypes(t *testing.T) {
 	out, _, code := runCLI(t, "types", example)
-	want := `INDEX  NAME    VERSION  EVENTS  DESCRIPTION
-1      build   1.0      2       One CI build run.
-2      deploy  1.0      0       A release pushed to an environment.
+	want := `INDEX  NAME    VERSION  PARENT  EVENTS  DESCRIPTION
+1      build   1.0      -       2       One CI build run.
+2      deploy  1.0      -       0       A release pushed to an environment.
 `
 	if code != 0 || out != want {
 		t.Fatalf("%d\n%s", code, out)
+	}
+	out, _, _ = runCLI(t, "types", family)
+	if !strings.Contains(out, "2      build.step  1.1      build   3       One step of a build.\n") {
+		t.Fatal(out)
+	}
+}
+
+const family = "../../../conformance/valid/026-family-basic.trak"
+
+func TestCatFamily(t *testing.T) {
+	out, _, code := runCLI(t, "cat", family, "build", "--family")
+	want := `N  TYPE        TIMESTAMP             user  status  duration  tags.[]  stdout   error        step     ok
+1  build       20261106T212000.001Z  ana   ok      910                ▸ empty
+2  build.step  20261106T212000.002Z  ana   ok      10                 ▸ empty               compile  yes
+3  build.step  20261106T212000.003Z  ana   ok      20                 ▸ empty               link     no
+4  build       20261106T212000.004Z  joel  failed  1                  ▸ empty  link failed
+5  build.step  20261106T212000.005Z  ana   ok      1                  ▸ empty               retry    yes
+`
+	if code != 0 || out != want {
+		t.Fatalf("%d\n%s", code, out)
+	}
+	for args, rows := range map[string]int{
+		"--last 2": 2, "--from 2 --to 4": 3, "--since 20261106T212000.004Z": 2, "--since 20300101T000000.000Z": 0,
+	} {
+		out, errOut, code := runCLI(t, append([]string{"cat", family, "build", "--family"}, strings.Fields(args)...)...)
+		if code != 0 || strings.Count(out, "\n") != rows+1 {
+			t.Errorf("%s: %d %s %s", args, code, out, errOut)
+		}
+	}
+	out, _, _ = runCLI(t, "cat", family, "build.step", "--family", "--last", "1")
+	if !strings.Contains(out, "\n3  build.step  20261106T212000.005Z") {
+		t.Fatal(out)
+	}
+	out, _, _ = runCLI(t, "cat", "../../../conformance/valid/111-child-of-unparseable-parent.trak", "p", "--family")
+	if strings.Count(out, "(values unavailable)") != 3 {
+		t.Fatal(out)
+	}
+	if _, _, code := runCLI(t, "cat", family, "build", "--family=x"); code != 2 {
+		t.Fatal(code)
 	}
 }
 
@@ -75,7 +114,11 @@ func TestExport(t *testing.T) {
 	out, _, code := runCLI(t, "export", example, "--format", "jsonl")
 	lines := strings.Split(strings.TrimSpace(out), "\n")
 	if code != 0 || len(lines) != 2 || !strings.HasPrefix(lines[1],
-		`{"type":"build","n":2,"timestamp":"20261107T140322.415Z","value":{"user":"joel","status":"failed"`) {
+		`{"type":"build","n":2,"timestamp":"20261107T140322.415Z","families":{"build":2},"value":{"user":"joel","status":"failed"`) {
+		t.Fatal(out)
+	}
+	out, _, _ = runCLI(t, "export", family, "build.step")
+	if !strings.HasPrefix(out, `{"type":"build.step","n":1,"timestamp":"20261106T212000.002Z","families":{"build":2,"build.step":1},`) {
 		t.Fatal(out)
 	}
 	out, _, _ = runCLI(t, "export", "../../../conformance/valid/020-keyless-map-entries.trak", "t")
@@ -138,7 +181,7 @@ func TestTailFollow(t *testing.T) {
 	out := &syncBuffer{ch: make(chan string, 100)}
 	stop := make(chan struct{})
 	done := make(chan error)
-	a, _ := parseArgs([]string{"-f", p, "--interval", "10ms"}, map[string]bool{"interval": true})
+	a, _ := parseArgs([]string{"-f", p, "--interval", "10ms"}, tailFlags)
 	go func() { done <- tail(out, a, stop) }()
 	next := func() string {
 		select {

@@ -9,8 +9,11 @@ import (
 )
 
 const (
-	magic        = "trak 1.0\n"
+	magic = "trak 1.1\n"
+	// Schema footers declare the oldest version their definition needs: 1.1
+	// for a child type.
 	writeVersion = "1.0"
+	childVersion = "1.1"
 	unset        = -(1 << 62)
 )
 
@@ -18,8 +21,20 @@ const (
 type Options struct {
 	// Overwrite lets Create replace an existing file.
 	Overwrite bool
-	// Sync calls fsync after each object.
+	// Sync calls fsync after each object. Create also syncs the file's
+	// directory after writing the magic line, where the platform allows it.
 	Sync bool
+}
+
+// syncDirFunc is syncDir, replaceable in tests.
+var syncDirFunc = syncDir
+
+// Pos is where an event was written: its number in its type, and its
+// object's start offset (the same as Event.Offset, usable as a cursor for
+// Reader.Before and Reader.After).
+type Pos struct {
+	N      int64
+	Offset int64
 }
 
 type spineNode struct {
@@ -31,9 +46,25 @@ type typeState struct {
 	schema *Schema
 	n      uint64
 	// spine holds node n, J(n), J(J(n)), ..., 0 with the latest last.
-	spine  []spineNode
+	spine []spineNode
+	// The latest timestamp in this type's family; only the root's is used.
 	lastMs int64
 	hasTs  bool
+	// The type's families, root first, ending with this type.
+	lineage []*typeState
+	// Events in this type's family so far.
+	familyCount uint64
+	hasChild    bool
+}
+
+func newTypeState(schema *Schema, end int64, parent *typeState) *typeState {
+	t := &typeState{schema: schema, spine: []spineNode{{0, end}}}
+	if parent != nil {
+		t.lineage = append(t.lineage, parent.lineage...)
+		parent.hasChild = true
+	}
+	t.lineage = append(t.lineage, t)
+	return t
 }
 
 // Writer appends schemas and events to a trak file. It holds an exclusive
@@ -76,6 +107,12 @@ func Create(path string, opts Options) (*Writer, error) {
 	if err := w.writeObject([]byte(magic)); err != nil {
 		f.Close()
 		return nil, err
+	}
+	if opts.Sync {
+		if err := syncDirFunc(path); err != nil {
+			f.Close()
+			return nil, err
+		}
 	}
 	return w, nil
 }
@@ -164,11 +201,23 @@ func (w *Writer) Define(name, definition string) (*Schema, error) {
 	if w.types[name] != nil {
 		return nil, &SchemaError{Msg: fmt.Sprintf("type %q is already defined", name)}
 	}
+	var parent *typeState
+	version := writeVersion
+	if i := strings.LastIndexByte(name, '.'); i >= 0 {
+		if parent = w.types[name[:i]]; parent == nil {
+			return nil, &SchemaError{Msg: fmt.Sprintf("define '%s' before its child '%s'", name[:i], name)}
+		}
+		version = childVersion
+	}
 	if !strings.HasSuffix(definition, "\n") {
 		definition += "\n"
 	}
 	index := len(w.order) + 1
-	schema, err := buildSchema(name, index, writeVersion, definition, true)
+	types := make(map[string]*Schema, len(w.types))
+	for n, t := range w.types {
+		types[n] = t.schema
+	}
+	schema, err := buildSchema(name, index, version, definition, true, types)
 	if err != nil {
 		return nil, err
 	}
@@ -178,53 +227,57 @@ func (w *Writer) Define(name, definition string) (*Schema, error) {
 		prev = uint64(start - w.lastSchemaEnd + 1)
 	}
 	obj := append(w.buf[:0], definition...)
-	obj = appendSchemaFooter(obj, name, index, writeVersion, []uint64{uint64(len(definition)), prev, 0})
+	obj = appendSchemaFooter(obj, name, index, version, []uint64{uint64(len(definition)), prev, 0})
 	w.buf = obj
 	if err := w.writeObject(obj); err != nil {
 		return nil, err
 	}
 	w.lastSchemaEnd = w.offset
-	t := &typeState{schema: schema, spine: []spineNode{{0, w.offset}}}
+	t := newTypeState(schema, w.offset, parent)
 	w.types[name] = t
 	w.order = append(w.order, t)
 	w.cov = append(w.cov, -1)
 	return schema, nil
 }
 
-// Write writes one event timestamped now and returns its number n. If now is
-// earlier than the type's last timestamp, that timestamp is reused.
-func (w *Writer) Write(typ string, value any) (int64, error) {
+// Write writes one event timestamped now and returns its position. If now is
+// earlier than the last timestamp in the type's family, that timestamp is
+// reused.
+func (w *Writer) Write(typ string, value any) (Pos, error) {
 	return w.write(typ, value, time.Time{}, false)
 }
 
 // WriteAt writes one event with the given timestamp, truncated to the
-// millisecond. A timestamp earlier than the type's last one is an error.
-func (w *Writer) WriteAt(typ string, value any, ts time.Time) (int64, error) {
+// millisecond, and returns its position. A timestamp earlier than the last
+// one in the type's family is an error.
+func (w *Writer) WriteAt(typ string, value any, ts time.Time) (Pos, error) {
 	return w.write(typ, value, ts, true)
 }
 
-func (w *Writer) write(typ string, value any, ts time.Time, explicit bool) (int64, error) {
+func (w *Writer) write(typ string, value any, ts time.Time, explicit bool) (Pos, error) {
 	t := w.types[typ]
 	if t == nil {
-		return 0, valueErr("type %q is not defined", typ)
+		return Pos{}, valueErr("type %q is not defined", typ)
 	}
 	if t.schema.Root == nil {
-		return 0, &SchemaError{Msg: fmt.Sprintf("can't write %s: %v", typ, t.schema.Err)}
+		return Pos{}, &SchemaError{Msg: fmt.Sprintf("can't write %s: %v", typ, t.schema.Err)}
 	}
+	root := t.lineage[0]
 	var ms int64
 	if explicit {
 		ms = toMillis(ts)
-		if t.hasTs && ms < t.lastMs {
-			return 0, valueErr("timestamp %s is earlier than %s's last event", FormatTimestamp(fromMillis(ms)), typ)
+		if root.hasTs && ms < root.lastMs {
+			return Pos{}, valueErr("timestamp %s is earlier than the last event in family %s",
+				FormatTimestamp(fromMillis(ms)), root.schema.Name)
 		}
 	} else {
 		ms = toMillis(w.now())
-		if t.hasTs && ms < t.lastMs {
-			ms = t.lastMs
+		if root.hasTs && ms < root.lastMs {
+			ms = root.lastMs
 		}
 	}
 	if err := w.enc.encode(t.schema.Root, value); err != nil {
-		return 0, err
+		return Pos{}, err
 	}
 	body, values := w.enc.body, w.enc.vals
 	n := t.n + 1
@@ -250,25 +303,37 @@ func (w *Writer) write(typ string, value any, ts time.Time, explicit bool) (int6
 		s := w.order[best-1].spine
 		dirEnd = s[len(s)-1].end
 	}
-	vlqs := make([]uint64, 0, 6+len(values))
+	// Family numbers: one per ancestor, then the type's own once it has a child.
+	families := t.lineage
+	if !t.hasChild {
+		families = families[:len(families)-1]
+	}
+	vlqs := make([]uint64, 0, 6+len(families)+len(values))
 	vlqs = append(vlqs, uint64(len(body)), uint64(start-stepEnd+1), uint64(start-jumpEnd+1),
-		uint64(start-dirEnd+1), uint64(best), 0)
+		uint64(start-dirEnd+1), uint64(best), uint64(len(families)))
+	for _, a := range families {
+		vlqs = append(vlqs, a.familyCount+1)
+	}
 	vlqs = append(vlqs, values...)
 	obj := append(w.buf[:0], body...)
 	w.stamp = appendStamp(w.stamp[:0], ms)
 	obj = appendEventFooter(obj, typ, n, w.stamp, vlqs)
 	w.buf = obj
 	if err := w.writeObject(obj); err != nil {
-		return 0, err
+		return Pos{}, err
 	}
 	for t.spine[len(t.spine)-1].node > j {
 		t.spine = t.spine[:len(t.spine)-1]
 	}
 	t.spine = append(t.spine, spineNode{n, w.offset})
-	t.n, t.lastMs, t.hasTs = n, ms, true
+	t.n = n
+	root.lastMs, root.hasTs = ms, true
+	for _, a := range t.lineage {
+		a.familyCount++
+	}
 	w.cov[index], w.cov[best] = w.seq, w.seq
 	w.seq++
-	return int64(n), nil
+	return Pos{N: int64(n), Offset: start}, nil
 }
 
 func (w *Writer) restore(path string, size int64) error {
@@ -296,7 +361,14 @@ func (w *Writer) restore(path string, size int64) error {
 
 func (w *Writer) restoreFrom(r *Reader) error {
 	for _, sf := range r.schemaFts {
-		t := &typeState{schema: r.byName[sf.name], spine: []spineNode{{0, sf.end}}}
+		schema := r.byName[sf.name]
+		var parent *typeState
+		if schema.Parent != "" {
+			if parent = w.types[schema.Parent]; parent == nil {
+				return formatErr(sf.fstart, "schema %s comes before its parent %s", sf.name, schema.Parent)
+			}
+		}
+		t := newTypeState(schema, sf.end, parent)
 		w.types[sf.name] = t
 		w.order = append(w.order, t)
 		w.lastSchemaEnd = sf.end
@@ -318,11 +390,22 @@ func (w *Writer) restoreFrom(r *Reader) error {
 		}
 		t.spine, t.n = spine, top.node()
 		if !top.schema {
+			// A family's latest event has its latest timestamp and largest numbers.
+			for _, a := range t.lineage {
+				num, err := r.familyNumber(top, a.schema.Name)
+				if err != nil {
+					return err
+				}
+				a.familyCount = max(a.familyCount, uint64(num))
+			}
 			ts, err := ParseTimestamp(top.stamp)
 			if err != nil {
 				return formatErr(top.fstart, "%v", err)
 			}
-			t.lastMs, t.hasTs = toMillis(ts), true
+			root := t.lineage[0]
+			if ms := toMillis(ts); !root.hasTs || ms > root.lastMs {
+				root.lastMs, root.hasTs = ms, true
+			}
 		}
 	}
 	// Rebuild coverage approximately from the last ~2K events.
