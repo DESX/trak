@@ -6,6 +6,7 @@
 //	trak export FILE [TYPE] [--format jsonl]
 //	trak tail -f FILE [TYPE] [--format jsonl]
 //	trak check FILE
+//	trak serve DIR [--addr host:port] [--prefix /path]
 package main
 
 import (
@@ -35,6 +36,9 @@ const usage = `usage:
   trak tail -f FILE [TYPE] [--format jsonl]
                                         follow a growing file
   trak check FILE                       validate a whole file
+  trak serve DIR [--addr 127.0.0.1:8765] [--prefix /path]
+                                        browse the .trak files under DIR in a
+                                        web viewer; files are read-only
 `
 
 func main() {
@@ -99,6 +103,9 @@ func run(argv []string, stdout, stderr io.Writer) int {
 		err = withPositional(rest, 1, 2, map[string]bool{"format": true}, func(a args) error { return export(stdout, a) })
 	case "tail":
 		err = withPositional(rest, 1, 2, tailFlags, func(a args) error { return tail(stdout, a, nil) })
+	case "serve":
+		err = withPositional(rest, 1, 1, map[string]bool{"addr": true, "prefix": true},
+			func(a args) error { return serve(stdout, a, nil) })
 	case "check":
 		var n int
 		err = withPositional(rest, 1, 1, nil, func(a args) error {
