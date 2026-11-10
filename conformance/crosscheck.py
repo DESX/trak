@@ -14,7 +14,8 @@ Usage (from the repository root):
         --impl go=go/interop --impl cpp=cpp/build/trak_interop
 
 Each ``--impl`` command is run as ``CMD write OPS.json OUT.trak`` and
-``CMD read FILE.trak`` (see the interop tools in each language).
+``CMD read FILE.trak`` (see the interop tools in each language). A ``--reader``
+command (the JavaScript library, which has no writer) only reads every file.
 """
 
 from __future__ import annotations
@@ -164,43 +165,71 @@ class Gen:
     def case(self) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
         r = self.r
         count = r.randint(27, 32) if r.random() < 0.1 else r.randint(1, 6)
-        types = []
+        # name -> (own members, description, parent name or None)
+        types: dict[str, tuple[list[tuple[str, dict[str, Any], str | None]], str, str | None]] = {}
         for i in range(count):
             desc = "// Type description.\n" if r.random() < 0.3 else ""
-            types.append((f"t{i}", self.members(3), desc))
+            parent = r.choice(list(types)) if types and r.random() < 0.4 else None
+            name = f"t{i}" if parent is None else f"{parent}.c{i}"
+            taken = {k for k, _, _ in self.full(types, parent)} if parent else set()
+            members = [m for m in self.members(3) if m[0] not in taken]
+            types[name] = (members, desc, parent)
         ops: list[dict[str, Any]] = []
         events: list[dict[str, Any]] = []
         defined: set[str] = set()
         numbers: dict[str, int] = {}
+        family_counts: dict[str, int] = {}
         ms = 1_794_000_000_000
-        for name, members, desc in types:
+
+        def define(name: str) -> None:
+            members, desc, parent = types[name]
+            if name in defined:
+                return
+            if parent is not None:
+                define(parent)
+            ops.append(
+                {"op": "define", "name": name, "schema": desc + self.render_object(members, "  ")}
+            )
+            defined.add(name)
+
+        for name in types:
             if r.random() < 0.3:
-                ops.append(
-                    {
-                        "op": "define",
-                        "name": name,
-                        "schema": desc + self.render_object(members, "  "),
-                    }
-                )
-                defined.add(name)
+                define(name)
         for _ in range(r.randint(0, 80)):
-            name, members, desc = r.choice(types)
-            if name not in defined:
-                ops.append(
-                    {
-                        "op": "define",
-                        "name": name,
-                        "schema": desc + self.render_object(members, "  "),
-                    }
-                )
-                defined.add(name)
+            name = r.choice(list(types))
+            define(name)
             ms += r.choice([0, 0, 1, 7, 1000])
             stamp = format_ms(ms)
-            inp, exp, _ = self.object(members)
+            inp, exp, _ = self.object(self.full(types, name))
             numbers[name] = numbers.get(name, 0) + 1
+            lineage = self.lineage(types, name)
+            for a in lineage:
+                family_counts[a] = family_counts.get(a, 0) + 1
             ops.append({"op": "write", "type": name, "value": inp, "timestamp": stamp})
-            events.append({"type": name, "n": numbers[name], "timestamp": stamp, "value": exp})
+            events.append(
+                {
+                    "type": name,
+                    "n": numbers[name],
+                    "timestamp": stamp,
+                    "families": {a: family_counts[a] for a in lineage},
+                    "value": exp,
+                }
+            )
         return ops, events
+
+    @staticmethod
+    def lineage(types: dict[str, Any], name: str | None) -> list[str]:
+        out: list[str] = []
+        while name is not None:
+            out.append(name)
+            name = types[name][2]
+        return out[::-1]
+
+    def full(
+        self, types: dict[str, Any], name: str | None
+    ) -> list[tuple[str, dict[str, Any], str | None]]:
+        """A type's members, inherited ones first."""
+        return [m for a in self.lineage(types, name) for m in types[a][0]]
 
 
 def format_ms(ms: int) -> str:
@@ -221,11 +250,16 @@ def main() -> int:
     ap.add_argument("--seeds", type=int, default=100)
     ap.add_argument("--first-seed", type=int, default=0)
     ap.add_argument("--impl", action="append", default=[], metavar="NAME=CMD")
+    ap.add_argument("--reader", action="append", default=[], metavar="NAME=CMD")
     args = ap.parse_args()
     impls = {}
     for spec in args.impl:
         name, _, cmd = spec.partition("=")
         impls[name] = shlex.split(cmd, posix=not sys.platform.startswith("win"))
+    readers = dict(impls)
+    for spec in args.reader:
+        name, _, cmd = spec.partition("=")
+        readers[name] = shlex.split(cmd, posix=not sys.platform.startswith("win"))
     if len(impls) < 2:
         ap.error("give at least two --impl")
     failures = 0
@@ -257,7 +291,7 @@ def main() -> int:
                     )
                     continue
                 decoded: dict[str, Any] = {}
-                for name, cmd in impls.items():
+                for name, cmd in readers.items():
                     for writer in impls:
                         p = run(cmd, "read", str(d / f"{writer}.trak"))
                         result = (
@@ -283,7 +317,8 @@ def main() -> int:
                 break
     total = args.seeds
     print(
-        f"{total} seeds, {len(impls)} implementations: {'ok' if not failures else f'{failures} failures'}"
+        f"{total} seeds, {len(impls)} writers, {len(readers)} readers:"
+        f" {'ok' if not failures else f'{failures} failures'}"
     )
     return 1 if failures else 0
 

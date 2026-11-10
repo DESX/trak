@@ -1,0 +1,18 @@
+{
+  "name": "trak-log",
+  "version": "1.1.0",
+  "description": "Reader for trak, a log format that programs write and read, and people can read too",
+  "license": "MIT",
+  "type": "module",
+  "private": true,
+  "exports": {
+    ".": "./src/index.js",
+    "./node": "./src/node.js"
+  },
+  "files": ["src"],
+  "engines": { "node": ">=18" },
+  "scripts": {
+    "test": "node --test test/"
+  },
+  "repository": { "type": "git", "url": "https://github.com/desx/trak", "directory": "js" }
+}
