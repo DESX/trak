@@ -2,7 +2,7 @@
 
 Each library runs the same workload: 1,000,000 small events written to a new file,
 then read back. The writers are byte-identical, so all three produce the same
-89 MB file (SHA-256 `acea79bf…`).
+89 MB file (SHA-256 `0b71c41f…`, trak 1.1).
 
 ## Workload
 
