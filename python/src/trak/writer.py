@@ -225,7 +225,11 @@ class Writer:
             for sf in r._schema_footers:
                 schema = r.schema(sf.name)
                 if schema.parent is not None:
-                    parent = self._types[schema.parent]
+                    parent = self._types.get(schema.parent)
+                    if parent is None:
+                        raise FormatError(
+                            f"schema {sf.name} comes before its parent {schema.parent}", sf.fstart
+                        )
                     parent.has_child = True
                     lineage = parent.lineage
                 else:

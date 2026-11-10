@@ -278,3 +278,11 @@ def test_seek_and_at_time(tmp_path: pathlib.Path) -> None:
                 assert e is None
             else:
                 assert e is not None and e.n == want + 1 and e.timestamp == stamp(want)
+
+
+def test_append_refuses_child_before_parent(tmp_path: pathlib.Path) -> None:
+    p = tmp_path / "bad.trak"
+    root = pathlib.Path(__file__).resolve().parents[2]
+    p.write_bytes((root / "conformance" / "invalid" / "021-child-before-parent.trak").read_bytes())
+    with pytest.raises(trak.FormatError, match="before its parent"):
+        trak.open_append(p)
