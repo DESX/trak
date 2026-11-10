@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <exception>
+#include <optional>
 #include <string>
 
 #include "trak/trak.hpp"
@@ -36,6 +37,32 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
         } catch (const std::exception&) {
         }
       }
+      try {
+        auto f = r.family(s.name);
+        const auto rows = f.count();
+        if (rows > 0) {
+          f.get(1);
+          f.latest();
+          f.at_time(0);
+          int seen = 0;
+          f.range(rows, 1, [&](const trak::Event& e) {
+            e.family_number();
+            if (auto p = e.prev()) p->n();
+            return ++seen < 50;
+          });
+        }
+      } catch (const std::exception&) {
+      }
+    }
+    try {
+      std::optional<std::int64_t> cursor;
+      for (int i = 0; i < 20; ++i) {
+        auto page = r.after(cursor, 7);
+        if (page.empty()) break;
+        cursor = page.back().offset();
+      }
+      r.before(cursor, 7);
+    } catch (const std::exception&) {
     }
     r.events([](const trak::Event& e) {
       try {

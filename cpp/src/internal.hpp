@@ -2,6 +2,7 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -46,9 +47,16 @@ bool valid_stamp_syntax(std::string_view s) noexcept;
 
 // --- schemas ---
 
+// Finds a schema defined earlier by name, or null.
+using SchemaLookup = std::function<const Schema*(const std::string&)>;
+
+// The parent a type of this name and schema version has, or "" (SPEC §5).
+std::string parent_name(const std::string& name, const std::string& version);
+
 // Builds a Schema. When not strict, parse failures are kept in Schema::error.
+// types finds the schemas defined before this one, for a child's parent.
 Schema build_schema(const std::string& name, int index, const std::string& version, const std::string& text,
-                    bool strict);
+                    bool strict, const SchemaLookup& types = {});
 
 // --- values ---
 
@@ -151,6 +159,9 @@ class Mapping {
   std::size_t size_ = 0;
 };
 
+// fsyncs the directory holding path (a no-op on Windows).
+void sync_dir(const std::string& path);
+
 // --- reader state ---
 
 using FooterPtr = std::shared_ptr<const Footer>;
@@ -169,6 +180,9 @@ struct ReaderState {
   std::vector<Schema> schemas;
   std::unordered_map<std::string, std::size_t> by_name;
   std::vector<FooterPtr> schema_footers;
+  // Where each type's first child schema ends: from there on, its events
+  // carry their number in its own family (SPEC §6).
+  std::unordered_map<std::string, std::int64_t> child_from;
   std::string tail_error;
   std::int64_t tail_error_offset = -1;
   mutable std::int64_t footer_reads = 0;
@@ -182,8 +196,20 @@ struct ReaderState {
   std::vector<FooterPtr> validate_tail(std::int64_t end) const;
   std::vector<FooterPtr> schema_chain(const FooterPtr& f) const;
   FooterPtr latest_footer(const Schema& s) const;
+  // The latest node of every type, in one walk back (SPEC §7).
+  void latest_all() const;
+  // Follows f's jump or step pointer, checking that it lands on the right node.
+  FooterPtr hop(const Footer& f, bool jump) const;
   FooterPtr navigate(FooterPtr f, std::uint64_t m) const;
+  // The first event of a type whose key is >= m, for a key that never
+  // decreases along the chain (SPEC §7, Seek), or null.
+  FooterPtr seek(const Schema& s, const std::function<std::int64_t(const Footer&)>& key, std::int64_t m) const;
+  // An event's number in one of its families (SPEC §6, Family numbers).
+  std::int64_t family_number(const Footer& f, const std::string& family) const;
+  // Checks that a cursor is where an object starts; throws ValueError.
+  std::int64_t cursor(std::int64_t c) const;
   const Schema* schema_of(const Footer& f) const;
+  std::vector<Schema> build_schemas(const std::vector<FooterPtr>& footers, std::size_t count) const;
 };
 
 }  // namespace trak::detail

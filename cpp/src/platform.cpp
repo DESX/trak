@@ -1,6 +1,7 @@
 // Files, memory maps and locks for POSIX and Windows.
 #include <cerrno>
 #include <cstring>
+#include <filesystem>
 #include <system_error>
 
 #include "internal.hpp"
@@ -129,6 +130,9 @@ void Mapping::reset() noexcept {
   size_ = 0;
 }
 
+// Windows has no directory fsync.
+void sync_dir(const std::string&) {}
+
 #else
 
 namespace {
@@ -206,6 +210,19 @@ void Mapping::reset() noexcept {
   if (data_) ::munmap(const_cast<char*>(data_), size_);
   data_ = nullptr;
   size_ = 0;
+}
+
+void sync_dir(const std::string& path) {
+  const std::string dir = std::filesystem::absolute(std::filesystem::path(path)).parent_path().string();
+  const int fd = ::open(dir.c_str(), O_RDONLY | O_CLOEXEC);
+  if (fd < 0) fail(dir);
+  const int rc = ::fsync(fd);
+  const int err = errno;
+  ::close(fd);
+  if (rc != 0) {
+    errno = err;
+    fail("fsync " + dir);
+  }
 }
 
 #endif

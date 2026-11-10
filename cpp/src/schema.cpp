@@ -161,7 +161,9 @@ class Parser {
       i_ += n;
       expect(':');
       auto t = parse_type();
-      obj->members.push_back(Member{key, t, ""});
+      const auto nl = s_.rfind('\n', pos == 0 ? 0 : pos - 1);
+      const int column = static_cast<int>(pos - (nl == std::string_view::npos || pos == 0 ? 0 : nl + 1)) + 1;
+      obj->members.push_back(Member{key, t, "", line_of(pos), column});
       const std::size_t idx = obj->members.size() - 1;
       member_lines_.push_back({obj.get(), idx, line_of(pos), pos});
       ws();
@@ -380,18 +382,49 @@ bool canonical_version(std::string_view s) noexcept {
 
 bool valid_type_name(std::string_view s) noexcept { return !s.empty() && match_word(s, ".") == s.size(); }
 
+std::string parent_name(const std::string& name, const std::string& version) {
+  if (!canonical_version(version)) return "";
+  const auto dot = version.find('.');
+  if (version.substr(0, dot) != "1" || version.substr(dot + 1) == "0") return "";
+  const auto last = name.rfind('.');
+  return last == std::string::npos ? "" : name.substr(0, last);
+}
+
 Schema build_schema(const std::string& name, int index, const std::string& version, const std::string& text,
-                    bool strict) {
+                    bool strict, const SchemaLookup& types) {
   Schema s;
   s.name = name;
   s.index = index;
   s.version = version;
   s.text = text;
+  s.parent = parent_name(name, version);
+  s.lineage = {name};
   try {
+    const Schema* p = nullptr;
+    if (!s.parent.empty()) {
+      p = types ? types(s.parent) : nullptr;
+      if (!p) throw SchemaError("parent type '" + s.parent + "' must be defined before '" + name + "'");
+      s.lineage = p->lineage;
+      s.lineage.push_back(name);
+    }
     if (!canonical_version(version) || version.substr(0, version.find('.')) != "1") {
       throw SchemaError("unsupported schema version " + version);
     }
     auto [root, desc] = parse_definition(text, strict);
+    if (p) {
+      if (!p->root) throw SchemaError("parent type '" + s.parent + "' can't be parsed");
+      for (const auto& m : root->members) {
+        for (const auto& inherited : p->root->members) {
+          if (inherited.key == m.key) {
+            throw SchemaError("key '" + m.key + "' is already defined by '" + s.parent + "'", m.line, m.column);
+          }
+        }
+      }
+      auto merged = std::make_shared<Type>(*root);
+      merged->members = p->root->members;
+      merged->members.insert(merged->members.end(), root->members.begin(), root->members.end());
+      root = std::move(merged);
+    }
     s.root = root;
     s.description = desc;
   } catch (const SchemaError& e) {

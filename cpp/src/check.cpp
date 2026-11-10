@@ -1,4 +1,5 @@
 // Full validation of a whole file (trak check).
+#include <algorithm>
 #include <unordered_map>
 
 #include "internal.hpp"
@@ -9,9 +10,10 @@ namespace {
 
 struct CheckType {
   Schema schema;
-  std::vector<std::int64_t> ends;  // end offset of node 0, 1, 2, ...
-  Millis last_ms = 0;
-  bool has_ts = false;
+  std::vector<std::int64_t> ends;               // end offset of node 0, 1, 2, ...
+  Millis last_ms = -(std::int64_t{1} << 62);  // the family's latest timestamp, kept on its root
+  std::int64_t family_count = 0;
+  bool has_child = false;
 };
 
 class Checker {
@@ -57,15 +59,28 @@ class Checker {
     if (body.empty() || body.back() != '\n') detail::format_error(f.fstart, "schema body must end with LF");
     const auto dot = f.stamp.find('.');
     if (f.stamp.substr(0, dot) != "1") detail::format_error(f.fstart, "unsupported schema version " + f.stamp);
+    // 1.0 and 1.1 are parsed strictly; newer minors leniently (DECISIONS I5).
+    const std::string minor = f.stamp.substr(dot + 1);
+    bool strict = minor == "0" || minor == "1";
+    const std::string parent = detail::parent_name(f.name, f.stamp);
+    if (!parent.empty()) {
+      auto p = types_.find(parent);
+      if (p == types_.end()) detail::format_error(f.fstart, "schema " + f.name + " comes before its parent " + parent);
+      p->second.has_child = true;
+      if (!p->second.schema.root) strict = false;  // the child's object can't be known either
+    }
     for (std::size_t i = 0; i < body.size(); ++i) {
       if (static_cast<unsigned char>(body[i]) >= 0x80) {
         detail::format_error(f.start + static_cast<std::int64_t>(i), "schema is not ASCII");
       }
     }
+    const detail::SchemaLookup lookup = [this](const std::string& name) -> const Schema* {
+      auto it = types_.find(name);
+      return it == types_.end() ? nullptr : &it->second.schema;
+    };
     CheckType t;
     try {
-      t.schema = detail::build_schema(f.name, static_cast<int>(f.num), f.stamp, std::string(body),
-                                      f.stamp.substr(dot + 1) == "0");
+      t.schema = detail::build_schema(f.name, static_cast<int>(f.num), f.stamp, std::string(body), strict, lookup);
     } catch (const SchemaError& e) {
       detail::format_error(f.start, "schema " + f.name + ": " + e.what());
     }
@@ -91,7 +106,23 @@ class Checker {
     } catch (const ValueError&) {
       detail::format_error(f.fstart, "invalid timestamp " + f.stamp);
     }
-    if (t.has_ts && ms < t.last_ms) detail::format_error(f.fstart, f.name + " timestamp goes backwards");
+    std::vector<CheckType*> lineage;
+    lineage.reserve(t.schema.lineage.size());
+    for (const auto& a : t.schema.lineage) lineage.push_back(&types_.at(a));
+    CheckType& family = *lineage.front();
+    if (ms < family.last_ms) {
+      const std::string what = family.has_child ? "family " + family.schema.name : f.name;
+      detail::format_error(f.fstart, what + " timestamp goes backwards");
+    }
+    const std::size_t levels = t.has_child ? lineage.size() : lineage.size() - 1;
+    std::vector<std::uint64_t> want, got;
+    want.reserve(levels);
+    for (std::size_t i = 0; i < levels; ++i) want.push_back(static_cast<std::uint64_t>(lineage[i]->family_count + 1));
+    const std::size_t given = static_cast<std::size_t>(std::min<std::uint64_t>(f.vlqs[5], levels));
+    got.assign(f.vlqs.begin() + 6, f.vlqs.begin() + 6 + static_cast<std::ptrdiff_t>(given));
+    if (got != want) {
+      detail::format_error(f.fstart, f.name + " family numbers are " + list(got) + ", expected " + list(want));
+    }
     pointer(f, f.vlqs[1], t.ends[n - 1], "step");
     pointer(f, f.vlqs[2], t.ends[jump(n)], "jump");
     const std::uint64_t dt = f.vlqs[4];
@@ -103,8 +134,14 @@ class Checker {
       framing(*t.schema.root, w.tree, "", w);
     }
     t.ends.push_back(f.end);
-    t.last_ms = ms;
-    t.has_ts = true;
+    family.last_ms = ms;
+    for (CheckType* a : lineage) ++a->family_count;
+  }
+
+  static std::string list(const std::vector<std::uint64_t>& v) {
+    std::string out = "[";
+    for (std::size_t i = 0; i < v.size(); ++i) out += (i ? ", " : "") + std::to_string(v[i]);
+    return out + "]";
   }
 
   static std::string join(const std::string& path, std::string_view key) {

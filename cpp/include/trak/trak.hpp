@@ -5,13 +5,16 @@
 //
 //   auto w = trak::Writer::create("app.trak");
 //   w.define("build", "{ user: str, duration: num }");
-//   w.write("build", trak::Value::dict({{"user", "ana"}, {"duration", 910}}));
+//   w.define("build.step", "{ step: str }");  // a child: user, duration, step
+//   trak::Pos pos = w.write("build", trak::Value::dict({{"user", "ana"}, {"duration", 910}}));
 //
 // Reading:
 //
 //   auto r = trak::Reader::open("app.trak");
-//   auto builds = r.table("build");
+//   auto builds = r.table("build");            // build events only
 //   std::cout << builds.count() << "\n";
+//   auto all = r.family("build");              // build and build.step, in file order
+//   auto page = r.after(pos.offset, 50);       // the next 50 events of any type
 //
 // Readers and writers are not safe for concurrent use.
 #pragma once
@@ -144,6 +147,9 @@ struct Member {
   std::string key;
   std::shared_ptr<Type> type;
   std::string description;
+  // Where the key is in its definition, 1-based (0 when unknown).
+  int line = 0;
+  int column = 0;
 };
 
 // A leaf column. path writes list indexes as [] and map keys as {}.
@@ -158,6 +164,10 @@ struct Field {
   std::string description;
 };
 
+// A type's schema. A child type ("build.step" in a 1.1 schema) names its
+// parent in parent, and its root and fields start with the parent's. lineage
+// names the type's families, root first and the type itself last (SPEC §5,
+// §6). A child of an unparseable parent is unparseable too.
 struct Schema {
   std::string name;
   int index = 0;
@@ -167,6 +177,8 @@ struct Schema {
   std::shared_ptr<Type> root;  // null when the definition can't be parsed
   std::vector<Field> fields;
   std::string error;  // why root is null
+  std::string parent;                // empty when the type has none
+  std::vector<std::string> lineage;  // root first, this type last
 
   bool parsed() const noexcept { return root != nullptr; }
   const std::vector<Annotation>& annotations() const;
@@ -282,6 +294,7 @@ struct Leaf {
 };
 
 class Reader;
+class Family;
 
 // One event. Values are decoded lazily on first access. String views point
 // into the mapped file and stay valid until the Reader is closed or refreshed.
@@ -291,8 +304,15 @@ class Event {
   std::int64_t n() const;
   const std::string& timestamp() const;
   Millis millis() const;
+  // The object's first byte; usable as a cursor for Reader::before/after.
   std::int64_t offset() const;
   const Schema& schema() const { return *schema_; }
+  // This event's row number in a family: its own type or an ancestor; empty
+  // means the root family. Throws std::out_of_range for a type outside its
+  // lineage, and FormatError when the footer lacks the number.
+  std::int64_t family_number(std::string_view family = {}) const;
+  // The previous event of the same type, in one footer read; nullopt for n 1.
+  std::optional<Event> prev() const;
 
   // A leaf's value bytes, or nullopt when absent. Paths are as written in the
   // file ("tags.1"); when map keys contain '.', the first matching leaf wins.
@@ -306,6 +326,7 @@ class Event {
  private:
   friend class Reader;
   friend class Table;
+  friend class Family;
   Event(const Reader* r, const Schema* s, std::shared_ptr<const detail::Footer> f);
   const detail::Walk& walk() const;
   const Reader* reader_;
@@ -325,15 +346,42 @@ class Table {
   Event get(std::int64_t n) const;
   // Events a to b inclusive, descending when a > b, until fn returns false.
   void range(std::int64_t a, std::int64_t b, const std::function<bool(const Event&)>& fn) const;
-  // The first event with timestamp >= ms, or nullopt.
+  // The first event with timestamp >= ms, or nullopt. A seek: O(log n).
   std::optional<Event> at_time(Millis ms) const;
 
  private:
   friend class Reader;
+  friend class Family;
   Table(const Reader* r, const Schema* s) : reader_(r), schema_(s) {}
   std::shared_ptr<const detail::Footer> footer_at(std::int64_t n) const;
   const Reader* reader_;
   const Schema* schema_;
+};
+
+// The events of a type and all its descendants, numbered from 1 in file
+// order (SPEC §1). Row m is a seek in each of the family's k types: O(k log n).
+class Family {
+ public:
+  const Schema& schema() const { return *schema_; }
+  const std::string& name() const { return schema_->name; }
+  // The type itself first, then its descendants in type index order.
+  const std::vector<const Schema*>& types() const { return types_; }
+  std::int64_t count() const;
+  std::optional<Event> latest() const;
+  // Throws std::out_of_range for a missing m.
+  Event get(std::int64_t m) const;
+  // Rows a to b inclusive, descending when a > b, until fn returns false.
+  void range(std::int64_t a, std::int64_t b, const std::function<bool(const Event&)>& fn) const;
+  // The first row with timestamp >= ms, or nullopt.
+  std::optional<Event> at_time(Millis ms) const;
+
+ private:
+  friend class Reader;
+  Family(const Reader* r, const Schema* s);
+  std::int64_t key(const detail::Footer& f) const;
+  const Reader* reader_;
+  const Schema* schema_;
+  std::vector<const Schema*> types_;
 };
 
 // A read-only, memory-mapped view of a trak file. It takes no lock.
@@ -358,6 +406,8 @@ class Reader {
   const std::vector<Schema>& types() const;
   const Schema& schema(std::string_view name) const;  // throws std::out_of_range
   Table table(std::string_view name) const;
+  // The events of a type and its descendants (throws std::out_of_range).
+  Family family(std::string_view name) const;
   // Picks up objects appended since open; returns whether anything changed.
   bool refresh();
   void close();
@@ -366,9 +416,19 @@ class Reader {
   void events(const std::function<bool(const Event&)>& fn) const;
   void events_backward(const std::function<bool(const Event&)>& fn) const;
 
+  // Paging in file order. A cursor is an Event::offset() (or a Pos::offset):
+  // before() returns up to limit events that start before it, newest first,
+  // and nullopt means the end of the file; after() returns up to limit events
+  // that start after it, oldest first, and nullopt means the start. Pass the
+  // last event returned to get the next page; an empty page means no more.
+  // A cursor that isn't where an object starts is a ValueError.
+  std::vector<Event> before(std::optional<std::int64_t> cursor = std::nullopt, std::size_t limit = 100) const;
+  std::vector<Event> after(std::optional<std::int64_t> cursor = std::nullopt, std::size_t limit = 100) const;
+
  private:
   friend class Event;
   friend class Table;
+  friend class Family;
   friend class Writer;
   friend std::size_t check(const std::string& path);
   Reader();
@@ -379,7 +439,14 @@ class Reader {
 
 struct Options {
   bool overwrite = false;  // let create replace an existing file
-  bool sync = false;       // fsync after each object
+  bool sync = false;       // fsync after each object, and the directory on create
+};
+
+// Where an event was written: its number in its type, and its object's start
+// offset (the same as Event::offset(), usable as a reader cursor).
+struct Pos {
+  std::int64_t n = 0;
+  std::int64_t offset = 0;
 };
 
 // Appends schemas and events to a trak file, holding an exclusive advisory
@@ -395,13 +462,16 @@ class Writer {
   Writer& operator=(Writer&&) noexcept;
   ~Writer();
 
+  // Writes a schema. A dotted name "a.b" is a child of "a", which must be
+  // defined already; its definition lists only its own members.
   const Schema& define(const std::string& name, std::string definition);
-  // Timestamped now (or the type's last timestamp, if now is earlier).
-  std::int64_t write(const std::string& type, const Value& value);
-  // A timestamp earlier than the type's last one is a ValueError.
-  std::int64_t write(const std::string& type, const Value& value, Millis timestamp);
+  // Timestamped now, or the family's last timestamp if now is earlier.
+  Pos write(const std::string& type, const Value& value);
+  // A timestamp earlier than the last one in the type's root family is a
+  // ValueError.
+  Pos write(const std::string& type, const Value& value, Millis timestamp);
   template <class T, std::enable_if_t<!std::is_same_v<T, Value>, int> = 0>
-  std::int64_t write(const std::string& type, const T& value) {
+  Pos write(const std::string& type, const T& value) {
     return write(type, to_value(value));
   }
   std::vector<const Schema*> types() const;
@@ -412,7 +482,7 @@ class Writer {
  private:
   struct State;
   Writer();
-  std::int64_t write_impl(const std::string& type, const Value& value, std::optional<Millis> ts);
+  Pos write_impl(const std::string& type, const Value& value, std::optional<Millis> ts);
   std::unique_ptr<State> s_;
 };
 

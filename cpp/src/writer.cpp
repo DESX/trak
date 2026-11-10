@@ -7,8 +7,11 @@
 namespace trak {
 
 namespace {
-constexpr const char* kMagic = "trak 1.0\n";
+constexpr const char* kMagic = "trak 1.1\n";
+// Schema footers declare the oldest version their definition needs: 1.1 for a
+// child type.
 constexpr const char* kVersion = "1.0";
+constexpr const char* kChildVersion = "1.1";
 constexpr std::int64_t kUnset = -(std::int64_t{1} << 62);
 
 struct SpineNode {
@@ -21,8 +24,13 @@ struct TypeState {
   std::uint64_t n = 0;
   // Node n, J(n), J(J(n)), ..., 0 with the latest last.
   std::vector<SpineNode> spine;
-  Millis last_ms = 0;
-  bool has_ts = false;
+  // The latest timestamp in this type's family; only the root's is used.
+  Millis last_ms = kUnset;
+  // The type's families, root first, ending with this type.
+  std::vector<TypeState*> lineage;
+  // Events in this type's family so far.
+  std::int64_t family_count = 0;
+  bool has_child = false;
 };
 }  // namespace
 
@@ -59,6 +67,7 @@ Writer Writer::create(const std::string& path, Options opts) {
   w.s_->file.lock();
   w.s_->file.truncate(0);
   w.s_->write(kMagic);
+  if (opts.sync) detail::sync_dir(path);
   return w;
 }
 
@@ -70,6 +79,7 @@ Writer Writer::open_append(const std::string& path, Options opts) {
   const std::int64_t size = w.s_->file.size();
   if (size == 0) {
     w.s_->write(kMagic);
+    if (opts.sync) detail::sync_dir(path);
     return w;
   }
   std::int64_t end;
@@ -89,6 +99,15 @@ void Writer::State::restore(Reader& r) {
   for (const auto& sf : st.schema_footers) {
     auto t = std::make_unique<TypeState>();
     t->schema = st.schemas[st.by_name.at(sf->name)];
+    if (!t->schema.parent.empty()) {
+      auto parent = types.find(t->schema.parent);
+      if (parent == types.end()) {
+        detail::format_error(sf->fstart, "schema " + sf->name + " comes before its parent " + t->schema.parent);
+      }
+      parent->second->has_child = true;
+      t->lineage = parent->second->lineage;
+    }
+    t->lineage.push_back(t.get());
     t->spine.push_back({0, sf->end});
     types[sf->name] = t.get();
     order.push_back(std::move(t));
@@ -105,12 +124,16 @@ void Writer::State::restore(Reader& r) {
     t->spine = std::move(spine);
     t->n = top->node();
     if (!top->schema) {
+      // A family's latest event has its latest timestamp and largest numbers.
+      for (TypeState* a : t->lineage) {
+        a->family_count = std::max(a->family_count, st.family_number(*top, a->schema.name));
+      }
+      TypeState* root = t->lineage.front();
       try {
-        t->last_ms = parse_timestamp(top->stamp);
+        root->last_ms = std::max(root->last_ms, parse_timestamp(top->stamp));
       } catch (const ValueError& e) {
         throw FormatError(e.what(), top->fstart);
       }
-      t->has_ts = true;
     }
   }
   // Rebuild coverage approximately from the last ~2K events.
@@ -138,17 +161,34 @@ const Schema& Writer::define(const std::string& name, std::string definition) {
   if (!detail::valid_type_name(name)) throw SchemaError("bad type name '" + name + "'");
   if (name.rfind("trak.", 0) == 0) throw SchemaError("type names starting with 'trak.' are reserved");
   if (s.types.count(name)) throw SchemaError("type '" + name + "' is already defined");
+  TypeState* parent = nullptr;
+  if (const auto dot = name.rfind('.'); dot != std::string::npos) {
+    const std::string parent_name = name.substr(0, dot);
+    auto it = s.types.find(parent_name);
+    if (it == s.types.end()) throw SchemaError("define '" + parent_name + "' before its child '" + name + "'");
+    parent = it->second;
+  }
+  const std::string version = parent ? kChildVersion : kVersion;
   if (definition.empty() || definition.back() != '\n') definition += '\n';
   const int index = static_cast<int>(s.order.size()) + 1;
-  Schema schema = detail::build_schema(name, index, kVersion, definition, true);
+  const detail::SchemaLookup lookup = [&s](const std::string& n) -> const Schema* {
+    auto it = s.types.find(n);
+    return it == s.types.end() ? nullptr : &it->second->schema;
+  };
+  Schema schema = detail::build_schema(name, index, version, definition, true, lookup);
   const std::int64_t start = s.offset;
   const std::uint64_t prev = s.order.empty() ? 0 : static_cast<std::uint64_t>(start - s.last_schema_end + 1);
   s.buf.assign(definition);
-  detail::append_schema_footer(s.buf, name, index, kVersion, {definition.size(), prev, 0});
+  detail::append_schema_footer(s.buf, name, index, version, {definition.size(), prev, 0});
   s.write(s.buf);
   s.last_schema_end = s.offset;
   auto t = std::make_unique<TypeState>();
   t->schema = std::move(schema);
+  if (parent) {
+    t->lineage = parent->lineage;
+    parent->has_child = true;
+  }
+  t->lineage.push_back(t.get());
   t->spine.push_back({0, s.offset});
   s.types[name] = t.get();
   s.order.push_back(std::move(t));
@@ -156,27 +196,28 @@ const Schema& Writer::define(const std::string& name, std::string definition) {
   return s.order.back()->schema;
 }
 
-std::int64_t Writer::write(const std::string& type, const Value& value) { return write_impl(type, value, std::nullopt); }
+Pos Writer::write(const std::string& type, const Value& value) { return write_impl(type, value, std::nullopt); }
 
-std::int64_t Writer::write(const std::string& type, const Value& value, Millis timestamp) {
+Pos Writer::write(const std::string& type, const Value& value, Millis timestamp) {
   return write_impl(type, value, timestamp);
 }
 
-std::int64_t Writer::write_impl(const std::string& type, const Value& value, std::optional<Millis> ts) {
+Pos Writer::write_impl(const std::string& type, const Value& value, std::optional<Millis> ts) {
   auto& s = *s_;
   auto it = s.types.find(type);
   if (it == s.types.end()) throw ValueError("type '" + type + "' is not defined");
   TypeState& t = *it->second;
   if (!t.schema.root) throw SchemaError("can't write " + type + ": " + t.schema.error);
+  TypeState& root = *t.lineage.front();
   Millis ms;
   if (ts) {
     ms = *ts;
-    if (t.has_ts && ms < t.last_ms) {
-      throw ValueError("timestamp " + format_timestamp(ms) + " is earlier than " + type + "'s last event");
+    if (ms < root.last_ms) {
+      throw ValueError("timestamp " + format_timestamp(ms) + " is earlier than the last event in family " +
+                       root.schema.name);
     }
   } else {
-    ms = now_millis();
-    if (t.has_ts && ms < t.last_ms) ms = t.last_ms;
+    ms = std::max(now_millis(), root.last_ms);
   }
   std::string body;
   std::vector<std::uint64_t> values;
@@ -202,8 +243,11 @@ std::int64_t Writer::write_impl(const std::string& type, const Value& value, std
                                   static_cast<std::uint64_t>(start - step_end + 1),
                                   static_cast<std::uint64_t>(start - jump_end + 1),
                                   static_cast<std::uint64_t>(start - dir_end + 1),
-                                  best,
-                                  0};
+                                  best};
+  // Family numbers: one per ancestor, then the type's own once it has a child.
+  const std::size_t levels = t.has_child ? t.lineage.size() : t.lineage.size() - 1;
+  vlqs.push_back(levels);
+  for (std::size_t i = 0; i < levels; ++i) vlqs.push_back(static_cast<std::uint64_t>(t.lineage[i]->family_count + 1));
   vlqs.insert(vlqs.end(), values.begin(), values.end());
   s.buf.assign(body);
   detail::append_event_footer(s.buf, type, n, format_timestamp(ms), vlqs);
@@ -211,10 +255,10 @@ std::int64_t Writer::write_impl(const std::string& type, const Value& value, std
   while (t.spine.back().node > j) t.spine.pop_back();
   t.spine.push_back({n, s.offset});
   t.n = n;
-  t.last_ms = ms;
-  t.has_ts = true;
+  root.last_ms = ms;
+  for (TypeState* a : t.lineage) ++a->family_count;
   s.cov[index] = s.cov[best] = s.seq++;
-  return static_cast<std::int64_t>(n);
+  return Pos{static_cast<std::int64_t>(n), start};
 }
 
 void Writer::flush() {

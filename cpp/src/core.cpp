@@ -7,7 +7,7 @@
 
 namespace trak {
 
-const char* version() noexcept { return "1.0.0"; }
+const char* version() noexcept { return "1.1.0"; }
 
 namespace {
 std::string with_offset(const std::string& message, std::int64_t offset) {

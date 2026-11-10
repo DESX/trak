@@ -102,7 +102,7 @@ TEST_F(RW, WriterReproducesSpecExample) {
 TEST_F(RW, ReaderOnSpecExample) {
   write_file(path("x.trak"), spec_example());
   auto r = trak::Reader::open(path("x.trak"));
-  EXPECT_EQ(r.version(), "1.0");
+  EXPECT_EQ(r.version(), "1.1");
   ASSERT_EQ(r.types().size(), 2u);
   EXPECT_EQ(r.schema("deploy").description, "A release pushed to an environment.");
   auto builds = r.table("build");
@@ -217,7 +217,7 @@ TEST_F(RW, ValueErrors) {
       EXPECT_NE(std::string(e.what()).find(msg), std::string::npos) << e.what();
     }
   }
-  EXPECT_EQ(w.write("t", trak::Value::dict({{"x", 1}})), 1);
+  EXPECT_EQ(w.write("t", trak::Value::dict({{"x", 1}})).n, 1);
   EXPECT_THROW(w.write("nope", trak::Value()), trak::ValueError);
 }
 

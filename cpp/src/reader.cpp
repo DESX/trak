@@ -10,6 +10,7 @@ namespace detail {
 
 namespace {
 constexpr std::size_t kCacheSize = 4096;
+constexpr std::int64_t kBelow = -(std::int64_t{1} << 62);
 
 std::int64_t last_lf_before(std::string_view buf, std::int64_t lo, std::int64_t hi) {
   // Index of the last LF in [lo, hi), or lo - 1 if none.
@@ -37,15 +38,32 @@ void ReaderState::load() {
   magic_end = static_cast<std::int64_t>(nl) + 1;
   end = recover(size);
   latest.clear();
-  schemas.clear();
   by_name.clear();
-  schemas.reserve(schema_footers.size());
-  for (std::size_t i = 0; i < schema_footers.size(); ++i) {
-    const Footer& f = *schema_footers[i];
-    const std::string text(buf.substr(static_cast<std::size_t>(f.start), static_cast<std::size_t>(f.fstart - f.start)));
-    schemas.push_back(build_schema(f.name, static_cast<int>(i + 1), f.stamp, text, false));
-    by_name[f.name] = i;
+  child_from.clear();
+  schemas = build_schemas(schema_footers, schema_footers.size());
+  for (std::size_t i = 0; i < schemas.size(); ++i) {
+    by_name[schemas[i].name] = i;
+    if (!schemas[i].parent.empty()) child_from.emplace(schemas[i].parent, schema_footers[i]->end);
   }
+}
+
+// Parses the first count schema objects in index order, so that children find
+// their parents.
+std::vector<Schema> ReaderState::build_schemas(const std::vector<FooterPtr>& footers, std::size_t count) const {
+  std::vector<Schema> out;
+  out.reserve(count);
+  std::unordered_map<std::string, std::size_t> names;
+  const SchemaLookup lookup = [&](const std::string& name) -> const Schema* {
+    auto it = names.find(name);
+    return it == names.end() ? nullptr : &out[it->second];
+  };
+  for (std::size_t i = 0; i < count; ++i) {
+    const Footer& f = *footers[i];
+    const std::string text(buf.substr(static_cast<std::size_t>(f.start), static_cast<std::size_t>(f.fstart - f.start)));
+    out.push_back(build_schema(f.name, static_cast<int>(f.num), f.stamp, text, false, lookup));
+    names[f.name] = i;
+  }
+  return out;
 }
 
 FooterPtr ReaderState::footer(std::int64_t at) const {
@@ -106,10 +124,10 @@ std::vector<FooterPtr> ReaderState::validate_tail(std::int64_t at) const {
   const FooterPtr f = footer(at);
   auto chain = schema_chain(f);
   if (f->schema) return chain;
-  for (const auto& s : chain) {
-    if (s->name != f->name) continue;
-    const std::string text(buf.substr(static_cast<std::size_t>(s->start), static_cast<std::size_t>(s->fstart - s->start)));
-    const Schema schema = build_schema(s->name, static_cast<int>(s->num), s->stamp, text, false);
+  for (std::size_t i = 0; i < chain.size(); ++i) {
+    if (chain[i]->name != f->name) continue;
+    const auto built = build_schemas(chain, i + 1);
+    const Schema& schema = built.back();
     if (schema.root) {
       const auto& v = f->vlqs;
       Walk(*schema.root, v.data() + f->values_begin(), v.size() - f->values_begin(), f->start, f->fstart);
@@ -168,22 +186,83 @@ FooterPtr ReaderState::latest_footer(const Schema& s) const {
   return f;
 }
 
+void ReaderState::latest_all() const {
+  const std::size_t want = schemas.size();
+  for (FooterPtr f = last(); f && latest.size() < want; f = prev(*f)) {
+    if (auto it = by_name.find(f->name); it != by_name.end()) latest.emplace(schemas[it->second].index, f);
+    if (f->schema) continue;
+    const std::uint64_t dt = f->vlqs[4];
+    if (dt == 0 || dt > want || latest.count(static_cast<int>(dt))) continue;
+    FooterPtr g = follow(*f, f->vlqs[3]);
+    if (g->name != schemas[dt - 1].name) format_error(g->end, "directory pointer leads to the wrong type");
+    latest.emplace(static_cast<int>(dt), std::move(g));
+  }
+}
+
+FooterPtr ReaderState::hop(const Footer& f, bool jump_) const {
+  const std::uint64_t want = jump_ ? jump(f.node()) : f.node() - 1;
+  FooterPtr g = follow(f, jump_ ? f.vlqs[2] : f.vlqs[1]);
+  if (g->name != f.name || g->node() != want) {
+    format_error(f.fstart, "pointer leads to the wrong node (wanted " + f.name + " " + std::to_string(want) + ")");
+  }
+  return g;
+}
+
 FooterPtr ReaderState::navigate(FooterPtr f, std::uint64_t m) const {
-  const std::string name = f->name;
-  while (f->node() > m) {
-    const std::uint64_t j = jump(f->node());
-    std::uint64_t ptr = f->vlqs[1], want = f->node() - 1;
-    if (j >= m) {
-      ptr = f->vlqs[2];
-      want = j;
+  while (f->node() > m) f = hop(*f, jump(f->node()) >= m);
+  return f;
+}
+
+FooterPtr ReaderState::seek(const Schema& s, const std::function<std::int64_t(const Footer&)>& key,
+                            std::int64_t m) const {
+  FooterPtr f = latest_footer(s);
+  if (f->schema || key(*f) < m) return nullptr;
+  while (f->node() > 1) {
+    if (jump(f->node()) > 0) {
+      FooterPtr g = hop(*f, true);
+      if (key(*g) >= m) {
+        f = std::move(g);
+        continue;
+      }
     }
-    FooterPtr next = follow(*f, ptr);
-    if (next->name != name || next->node() != want) {
-      format_error(f->fstart, "pointer leads to the wrong node (wanted " + name + " " + std::to_string(want) + ")");
-    }
-    f = next;
+    FooterPtr g = hop(*f, false);
+    if (key(*g) < m) break;
+    f = std::move(g);
   }
   return f;
+}
+
+std::int64_t ReaderState::family_number(const Footer& f, const std::string& family) const {
+  const Schema& s = *schema_of(f);
+  const auto it = std::find(s.lineage.begin(), s.lineage.end(), family);
+  if (it == s.lineage.end()) throw std::out_of_range(f.name + " is not in family '" + family + "'");
+  const auto level = static_cast<std::size_t>(it - s.lineage.begin());
+  if (level == s.lineage.size() - 1) {
+    const auto child = child_from.find(f.name);
+    if (child == child_from.end() || child->second > f.start) return static_cast<std::int64_t>(f.num);
+  }
+  if (level >= f.vlqs[5]) format_error(f.fstart, f.name + " event has no number in family " + family);
+  return static_cast<std::int64_t>(f.vlqs[6 + level]);
+}
+
+std::int64_t ReaderState::cursor(std::int64_t c) const {
+  if (c == magic_end || c == end) return c;
+  if (c <= magic_end || c > end) {
+    throw ValueError("cursor " + std::to_string(c) + " is outside the file's valid objects");
+  }
+  try {
+    const FooterPtr f = footer(c);
+    auto it = by_name.find(f->name);
+    if (it == by_name.end()) format_error(f->fstart, "unknown type '" + f->name + "'");
+    const Schema& s = schemas[it->second];
+    if (!f->schema && s.root) {
+      const auto& v = f->vlqs;
+      Walk(*s.root, v.data() + f->values_begin(), v.size() - f->values_begin(), f->start, f->fstart);
+    }
+  } catch (const FormatError&) {
+    throw ValueError("cursor " + std::to_string(c) + " is not the start of an object");
+  }
+  return c;
 }
 
 const Schema* ReaderState::schema_of(const Footer& f) const {
@@ -191,6 +270,20 @@ const Schema* ReaderState::schema_of(const Footer& f) const {
   if (it == by_name.end()) format_error(f.fstart, "event of type '" + f.name + "' has no schema");
   return &schemas[it->second];
 }
+
+namespace {
+// Keys for seeks; the schema (node 0) is below every key.
+std::int64_t start_key(const Footer& f) { return f.schema ? kBelow : f.start; }
+
+std::int64_t stamp_key(const Footer& f) {
+  if (f.schema) return kBelow;
+  try {
+    return parse_timestamp(f.stamp);
+  } catch (const ValueError& e) {
+    throw FormatError(e.what(), f.fstart);
+  }
+}
+}  // namespace
 
 }  // namespace detail
 
@@ -229,6 +322,49 @@ const Schema& Reader::schema(std::string_view name) const {
 }
 
 Table Reader::table(std::string_view name) const { return Table(this, &schema(name)); }
+
+Family Reader::family(std::string_view name) const { return Family(this, &schema(name)); }
+
+std::vector<Event> Reader::before(std::optional<std::int64_t> cursor, std::size_t limit) const {
+  const auto& st = *s_;
+  const std::int64_t c = cursor ? st.cursor(*cursor) : st.end;
+  std::vector<Event> out;
+  for (auto f = c == st.magic_end ? nullptr : st.footer(c); f && out.size() < limit; f = st.prev(*f)) {
+    if (!f->schema) out.push_back(Event(this, st.schema_of(*f), f));
+  }
+  return out;
+}
+
+std::vector<Event> Reader::after(std::optional<std::int64_t> cursor, std::size_t limit) const {
+  const auto& st = *s_;
+  const std::int64_t c = cursor ? st.cursor(*cursor) : -1;
+  if (limit == 0) return {};
+  // The objects after c can't be found by scanning forward, since logged
+  // content may look like footers. Instead find, per type, its first event
+  // after c by seeking on offsets, then walk back from a point that has at
+  // least limit events before it.
+  std::int64_t bound = st.end;
+  st.latest_all();
+  for (const auto& s : st.schemas) {
+    const auto top = st.latest_footer(s);
+    if (top->schema) continue;
+    const auto first = st.seek(s, detail::start_key, c + 1);
+    if (first && limit - 1 <= top->node() - first->node()) {
+      bound = std::min(bound, st.navigate(top, first->node() + limit - 1)->end);
+    }
+  }
+  std::vector<detail::FooterPtr> found;
+  for (auto f = bound == st.magic_end ? nullptr : st.footer(bound); f && f->start > c; f = st.prev(*f)) {
+    if (!f->schema) found.push_back(f);
+  }
+  const std::size_t keep = std::min(found.size(), limit);
+  std::vector<Event> out;
+  out.reserve(keep);
+  for (std::size_t i = found.size(); i > found.size() - keep; --i) {
+    out.push_back(Event(this, st.schema_of(*found[i - 1]), found[i - 1]));
+  }
+  return out;
+}
 
 bool Reader::refresh() {
   if (!s_->file.is_open()) throw Error("trak: reader is closed");
@@ -307,25 +443,160 @@ void Table::range(std::int64_t a, std::int64_t b, const std::function<bool(const
 }
 
 std::optional<Event> Table::at_time(Millis ms) const {
-  const std::int64_t total = count();
-  std::int64_t lo = 1, hi = total + 1;
-  while (lo < hi) {
-    const std::int64_t mid = lo + (hi - lo) / 2;
-    const auto f = footer_at(mid);
-    Millis at;
-    try {
-      at = parse_timestamp(f->stamp);
-    } catch (const ValueError& e) {
-      throw FormatError(e.what(), f->fstart);
-    }
-    if (at >= ms) {
-      hi = mid;
-    } else {
-      lo = mid + 1;
+  auto f = reader_->s_->seek(*schema_, detail::stamp_key, ms);
+  if (!f) return std::nullopt;
+  return Event(reader_, schema_, std::move(f));
+}
+
+// --- Family ---
+
+Family::Family(const Reader* r, const Schema* s) : reader_(r), schema_(s) {
+  for (const auto& t : r->s_->schemas) {
+    if (std::find(t.lineage.begin(), t.lineage.end(), s->name) != t.lineage.end()) types_.push_back(&t);
+  }
+}
+
+std::int64_t Family::key(const detail::Footer& f) const {
+  return f.schema ? detail::kBelow : reader_->s_->family_number(f, schema_->name);
+}
+
+namespace {
+// The latest event of each of a family's types that has any.
+std::vector<detail::FooterPtr> family_tops(const detail::ReaderState& st, const std::vector<const Schema*>& types) {
+  if (types.size() > 1) st.latest_all();
+  std::vector<detail::FooterPtr> out;
+  for (const auto* s : types) {
+    auto f = st.latest_footer(*s);
+    if (!f->schema) out.push_back(std::move(f));
+  }
+  return out;
+}
+}  // namespace
+
+std::int64_t Family::count() const {
+  std::int64_t best = 0;
+  for (const auto& f : family_tops(*reader_->s_, types_)) best = std::max(best, key(*f));
+  return best;
+}
+
+std::optional<Event> Family::latest() const {
+  detail::FooterPtr best;
+  std::int64_t best_key = 0;
+  for (auto& f : family_tops(*reader_->s_, types_)) {
+    const std::int64_t k = key(*f);
+    if (!best || k > best_key) {
+      best_key = k;
+      best = std::move(f);
     }
   }
-  if (lo > total) return std::nullopt;
-  return get(lo);
+  if (!best) return std::nullopt;
+  return Event(reader_, reader_->s_->schema_of(*best), best);
+}
+
+Event Family::get(std::int64_t m) const {
+  if (m >= 1) {
+    const auto k = [this](const detail::Footer& f) { return key(f); };
+    for (const auto* s : types_) {
+      auto f = reader_->s_->seek(*s, k, m);
+      if (f && key(*f) == m) return Event(reader_, s, std::move(f));
+    }
+  }
+  throw std::out_of_range("family " + schema_->name + " has no row " + std::to_string(m));
+}
+
+namespace {
+// One type's events within a family range, in order, read a chunk at a time
+// like Table::range.
+struct Run {
+  const Schema* schema;
+  std::int64_t next;  // the next node to yield
+  std::int64_t last;  // the final node, inclusive
+  bool down;
+  std::vector<detail::FooterPtr> chunk;  // pending footers, the next one last
+
+  detail::FooterPtr peek(const detail::ReaderState& st) {
+    if (chunk.empty()) {
+      if (down ? next < last : next > last) return nullptr;
+      if (down) {
+        // Descending steps are one read each.
+        chunk.push_back(st.navigate(st.latest_footer(*schema), static_cast<std::uint64_t>(next)));
+      } else {
+        const std::int64_t hi = std::min(last, next + 255);
+        chunk.push_back(st.navigate(st.latest_footer(*schema), static_cast<std::uint64_t>(hi)));
+        while (static_cast<std::int64_t>(chunk.back()->num) > next) chunk.push_back(st.hop(*chunk.back(), false));
+      }
+    }
+    return chunk.back();
+  }
+
+  void pop(const detail::ReaderState& st) {
+    detail::FooterPtr f = chunk.back();
+    chunk.pop_back();
+    if (down) {
+      --next;
+      if (next >= last && next >= 1) chunk.push_back(st.hop(*f, false));
+    } else {
+      ++next;
+    }
+  }
+};
+}  // namespace
+
+void Family::range(std::int64_t a, std::int64_t b, const std::function<bool(const Event&)>& fn) const {
+  const std::int64_t total = count();
+  for (auto x : {a, b}) {
+    if (x < 1 || x > total) throw std::out_of_range("family " + schema_->name + " has no row " + std::to_string(x));
+  }
+  const auto& st = *reader_->s_;
+  const std::int64_t lo = std::min(a, b), hi = std::max(a, b);
+  const bool down = a > b;
+  const auto k = [this](const detail::Footer& f) { return key(f); };
+  std::vector<Run> runs;
+  for (const auto* s : types_) {
+    const auto first = st.seek(*s, k, lo);
+    if (!first || key(*first) > hi) continue;
+    const auto past = st.seek(*s, k, hi + 1);
+    const std::int64_t last =
+        (past ? static_cast<std::int64_t>(past->node()) : static_cast<std::int64_t>(st.latest_footer(*s)->node()) + 1) - 1;
+    const auto first_n = static_cast<std::int64_t>(first->node());
+    runs.push_back(down ? Run{s, last, first_n, true, {}} : Run{s, first_n, last, false, {}});
+  }
+  // Merge the runs by family number.
+  for (;;) {
+    Run* pick = nullptr;
+    std::int64_t pick_key = 0;
+    for (auto& run : runs) {
+      const auto f = run.peek(st);
+      if (!f) continue;
+      const std::int64_t fk = key(*f);
+      if (!pick || (down ? fk > pick_key : fk < pick_key)) {
+        pick = &run;
+        pick_key = fk;
+      }
+    }
+    if (!pick) return;
+    const auto f = pick->peek(st);
+    pick->pop(st);
+    if (!fn(Event(reader_, pick->schema, f))) return;
+  }
+}
+
+std::optional<Event> Family::at_time(Millis ms) const {
+  // Timestamps never decrease within a family, so it's the earliest of each
+  // type's first such event.
+  detail::FooterPtr best;
+  std::int64_t best_key = 0;
+  for (const auto* s : types_) {
+    auto f = reader_->s_->seek(*s, detail::stamp_key, ms);
+    if (!f) continue;
+    const std::int64_t fk = key(*f);
+    if (!best || fk < best_key) {
+      best_key = fk;
+      best = std::move(f);
+    }
+  }
+  if (!best) return std::nullopt;
+  return Event(reader_, reader_->s_->schema_of(*best), best);
 }
 
 // --- Event ---
@@ -338,6 +609,19 @@ std::int64_t Event::n() const { return static_cast<std::int64_t>(footer_->num); 
 const std::string& Event::timestamp() const { return footer_->stamp; }
 Millis Event::millis() const { return parse_timestamp(footer_->stamp); }
 std::int64_t Event::offset() const { return footer_->start; }
+
+std::int64_t Event::family_number(std::string_view family) const {
+  const std::string name = family.empty() ? schema_->lineage.front() : std::string(family);
+  if (std::find(schema_->lineage.begin(), schema_->lineage.end(), name) == schema_->lineage.end()) {
+    throw std::out_of_range(footer_->name + " is not in family '" + name + "'");
+  }
+  return reader_->s_->family_number(*footer_, name);
+}
+
+std::optional<Event> Event::prev() const {
+  if (footer_->num == 1) return std::nullopt;
+  return Event(reader_, schema_, reader_->s_->hop(*footer_, false));
+}
 
 const detail::Walk& Event::walk() const {
   if (!walk_) {

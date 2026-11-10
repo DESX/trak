@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(trak VERSION 1.0.0 LANGUAGES CXX)
+project(trak VERSION 1.1.0 LANGUAGES CXX)
 
 if(NOT CMAKE_CXX_STANDARD)
   set(CMAKE_CXX_STANDARD 17)
@@ -72,7 +72,9 @@ if(TRAK_BUILD_TESTS)
     tests/rw_test.cpp
     tests/conformance_test.cpp
     tests/vectors.cpp
-    tests/bounds_test.cpp)
+    tests/bounds_test.cpp
+    tests/family_test.cpp
+    tests/cursor_test.cpp)
   target_link_libraries(trak_tests PRIVATE trak::trak GTest::gtest_main nlohmann_json::nlohmann_json)
   target_compile_definitions(trak_tests PRIVATE
     TRAK_REPO_DIR="${CMAKE_CURRENT_SOURCE_DIR}/..")
