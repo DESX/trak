@@ -21,8 +21,8 @@ jobs:
       run:
         working-directory: python
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python }}
       - run: pip install -e ".[dev]"
@@ -38,8 +38,8 @@ jobs:
     name: conformance vectors are up to date
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - run: pip install -e "python[dev]"
@@ -61,8 +61,8 @@ jobs:
       run:
         working-directory: go
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
         with:
           go-version: ${{ matrix.go }}
           cache-dependency-path: go/go.sum
@@ -76,11 +76,60 @@ jobs:
         with:
           working-directory: go
           install-go: false
+      - name: The embedded viewer matches viewer/ and js/src
+        if: runner.os == 'Linux' && matrix.go == 'stable'
+        run: |
+          cd cmd/trak && go generate
+          git diff --exit-code -- .
+          test -z "$(git status --porcelain -- .)"
       - name: Fuzz
         if: runner.os == 'Linux' && matrix.go == 'stable'
         run: |
           go test -run '^$' -fuzz '^FuzzReader$' -fuzztime 30s .
           go test -run '^$' -fuzz '^FuzzSchemaParser$' -fuzztime 30s .
+
+  js:
+    name: javascript / node ${{ matrix.node }} / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        node: [18, 20, 22]
+        include:
+          - { os: macos-latest, node: 22 }
+          - { os: windows-latest, node: 22 }
+    defaults:
+      run:
+        working-directory: js
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ matrix.node }}
+      - run: node --test test/conformance.test.js test/reader.test.js
+
+  viewer:
+    name: viewer end-to-end (headless Chromium)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: viewer/test
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version: stable
+          cache-dependency-path: go/go.sum
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm test
 
   cpp:
     name: c++ ${{ matrix.compiler }} / ${{ matrix.os }}
@@ -94,7 +143,7 @@ jobs:
           - { os: macos-latest, compiler: clang, cxx: clang++ }
           - { os: windows-latest, compiler: msvc, cxx: cl }
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Configure
         run: cmake -S cpp -B cpp/build -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=${{ matrix.cxx }} -DTRAK_WERROR=ON
         if: runner.os != 'Windows'
@@ -114,7 +163,7 @@ jobs:
           - { compiler: gcc, cxx: g++ }
           - { compiler: clang, cxx: clang++ }
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - run: cmake -S cpp -B cpp/build -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_COMPILER=${{ matrix.cxx }} -DTRAK_WERROR=ON -DTRAK_SANITIZE=ON
       - run: cmake --build cpp/build --parallel
       - run: ctest --test-dir cpp/build --output-on-failure
@@ -123,8 +172,8 @@ jobs:
     name: c++ clang-tidy
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - run: pip install clang-tidy==18.1.8
@@ -136,7 +185,7 @@ jobs:
     runs-on: ubuntu-latest
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - run: cmake -S cpp -B cpp/build -DCMAKE_CXX_COMPILER=clang++ -DTRAK_BUILD_TESTS=OFF -DTRAK_BUILD_FUZZERS=ON
       - run: cmake --build cpp/build --target trak_fuzz_reader --parallel
       # Valid and write vectors share names, so prefix each file with its directory.
@@ -154,14 +203,17 @@ jobs:
       run:
         shell: bash
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version: stable
           cache-dependency-path: go/go.sum
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
       - run: pip install -e python
       - run: cd go && go build -o interop$(go env GOEXE) ./internal/interop
       - run: cmake -S cpp -B cpp/build -DCMAKE_BUILD_TYPE=Release
@@ -173,17 +225,18 @@ jobs:
           python conformance/crosscheck.py --seeds 200 \
             --impl python="python python/tests/interop.py" \
             --impl go=go/interop$(cd go && go env GOEXE) \
-            --impl cpp=$cpp
+            --impl cpp=$cpp \
+            --reader js="node js/tools/interop.js"
 
   readme:
     name: README quickstarts run as written
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version: stable
           cache-dependency-path: go/go.sum

@@ -12,7 +12,7 @@ jobs:
     name: tag the Go module
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Push go/${{ github.ref_name }}
         run: |
           git tag "go/${GITHUB_REF_NAME}" "${GITHUB_SHA}"
@@ -30,8 +30,8 @@ jobs:
           - { goos: darwin, goarch: arm64 }
           - { goos: windows, goarch: amd64 }
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
         with:
           go-version: stable
           cache-dependency-path: go/go.sum
@@ -45,7 +45,7 @@ jobs:
           ext=""; [ "$GOOS" = windows ] && ext=".exe"
           name="trak-${GITHUB_REF_NAME}-${GOOS}-${GOARCH}${ext}"
           go build -trimpath -ldflags "-s -w" -o "../dist/${name}" ./cmd/trak
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: cli-${{ matrix.goos }}-${{ matrix.goarch }}
           path: dist/*
@@ -54,13 +54,13 @@ jobs:
     name: build Python distributions
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - run: pip install build
       - run: python -m build python --outdir dist
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: python-dist
           path: dist/*
@@ -75,7 +75,7 @@ jobs:
     permissions:
       id-token: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v6
         with:
           name: python-dist
           path: dist
@@ -86,8 +86,8 @@ jobs:
     needs: [cli, python]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v6
         with:
           path: dist
           merge-multiple: true
