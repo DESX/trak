@@ -4,6 +4,7 @@
     "name": "t",
     "index": 1,
     "version": "1.0",
+    "parent": null,
     "description": null,
     "parsed": true,
     "annotations": [],
@@ -62,6 +63,6 @@
   }
 ],
 "events": [
-{"type": "t", "n": 1, "timestamp": "20261106T212000.001Z", "value": {"jobs": [{"name": "build", "env": [["CC", "gcc"], ["CFLAGS", "-O2"]], "steps": [{"cmd": "make", "out": "ok\n", "meta": [["t", ["1", "2"]], [null, []]]}, {"cmd": "test", "out": null, "meta": []}]}, {"name": "lint", "env": [], "steps": []}]}}
+{"type": "t", "n": 1, "timestamp": "20261106T212000.001Z", "families": {"t": 1}, "value": {"jobs": [{"name": "build", "env": [["CC", "gcc"], ["CFLAGS", "-O2"]], "steps": [{"cmd": "make", "out": "ok\n", "meta": [["t", ["1", "2"]], [null, []]]}, {"cmd": "test", "out": null, "meta": []}]}, {"name": "lint", "env": [], "steps": []}]}}
 ]
 }

@@ -1,0 +1,11 @@
+[
+{"op": "define", "name": "run", "schema": "{ i: num }\n"},
+{"op": "define", "name": "run.part", "schema": "{ p: str }\n"},
+{"op": "write", "type": "run", "value": {"i": 0}, "timestamp": "20261107T000000.000Z"},
+{"op": "write", "type": "run.part", "value": {"i": 1, "p": "1"}, "timestamp": "20261107T000000.000Z"},
+{"op": "write", "type": "run", "value": {"i": 2}, "timestamp": "20261107T000000.000Z"},
+{"op": "write", "type": "run.part", "value": {"i": 3, "p": "3"}, "timestamp": "20261107T000000.000Z"},
+{"op": "write", "type": "run", "value": {"i": 4}, "timestamp": "20261107T000000.000Z"},
+{"op": "write", "type": "run.part", "value": {"i": 5, "p": "5"}, "timestamp": "20261107T000000.000Z"},
+{"op": "write", "type": "run", "value": {"i": 6}, "timestamp": "20261107T000000.001Z"}
+]

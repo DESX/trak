@@ -1,4 +1,4 @@
-trak 1.0
+trak 1.1
 { l: [] str?, m: {} str?, o: { x: str }? }
 ##[ t 1 1.0 ]##bRAA
 ==[ t 1 20261106T212000.001Z ]==ABBBAAAAA

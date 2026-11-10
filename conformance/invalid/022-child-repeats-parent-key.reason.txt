@@ -1,0 +1,2 @@
+p.c repeats p's key a
+offset: 39

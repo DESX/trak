@@ -4,6 +4,7 @@
     "name": "ok",
     "index": 1,
     "version": "1.0",
+    "parent": null,
     "description": null,
     "parsed": true,
     "annotations": [],
@@ -24,6 +25,7 @@
     "name": "future",
     "index": 2,
     "version": "1.4",
+    "parent": null,
     "description": null,
     "parsed": false,
     "annotations": [],
@@ -31,8 +33,8 @@
   }
 ],
 "events": [
-{"type": "future", "n": 1, "timestamp": "20261107T140210.120Z", "value": null},
-{"type": "ok", "n": 1, "timestamp": "20261107T140210.120Z", "value": {"a": "y"}},
-{"type": "future", "n": 2, "timestamp": "20261107T140322.415Z", "value": null}
+{"type": "future", "n": 1, "timestamp": "20261107T140210.120Z", "families": {"future": 1}, "value": null},
+{"type": "ok", "n": 1, "timestamp": "20261107T140210.120Z", "families": {"ok": 1}, "value": {"a": "y"}},
+{"type": "future", "n": 2, "timestamp": "20261107T140322.415Z", "families": {"future": 2}, "value": null}
 ]
 }

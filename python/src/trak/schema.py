@@ -106,7 +106,12 @@ class Field:
 
 @dataclass(eq=False)
 class Schema:
-    """A type's schema. ``root`` is None when its definition can't be parsed; see ``error``."""
+    """A type's schema. ``root`` is None when its definition can't be parsed; see ``error``.
+
+    A child type (``build.step`` in a 1.1 schema) has its parent's name in ``parent``, and its
+    ``root`` and ``fields`` start with the parent's. ``lineage`` names the type's families,
+    root first and the type itself last (SPEC §5, §6).
+    """
 
     name: str
     index: int
@@ -116,6 +121,12 @@ class Schema:
     root: Object | None
     fields: tuple[Field, ...]
     error: SchemaError | None = None
+    parent: str | None = None
+    lineage: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if not self.lineage:
+            self.lineage = (self.name,)
 
     @property
     def annotations(self) -> tuple[Annotation, ...]:
@@ -145,18 +156,62 @@ def parse_definition(text: str, *, strict: bool = True) -> tuple[Object, str | N
     return _Parser(text, strict).parse()
 
 
-def build_schema(name: str, index: int, version: str, text: str, *, strict: bool = False) -> Schema:
-    """Parse ``text`` into a Schema. When not strict, parse failures are kept in ``error``."""
+def parent_name(name: str, version: str) -> str | None:
+    """The parent a type of this name and schema version has, if any (SPEC §5)."""
+    m = _VERSION.fullmatch(version)
+    if m is None or m.group(1) != "1" or m.group(2) == "0" or "." not in name:
+        return None
+    return name.rsplit(".", 1)[0]
+
+
+def build_schema(
+    name: str,
+    index: int,
+    version: str,
+    text: str,
+    *,
+    strict: bool = False,
+    types: dict[str, Schema] | None = None,
+) -> Schema:
+    """Parse ``text`` into a Schema. When not strict, parse failures are kept in ``error``.
+
+    ``types`` holds the schemas defined before this one, for finding a child's parent.
+    """
+    parent = parent_name(name, version)
+    lineage: tuple[str, ...] = (name,)
     try:
+        if parent is not None:
+            p = (types or {}).get(parent)
+            if p is None:
+                raise SchemaError(f"parent type {parent!r} must be defined before {name!r}")
+            lineage = (*p.lineage, name)
         m = _VERSION.fullmatch(version)
         if m is None or m.group(1) != "1":
             raise SchemaError(f"unsupported schema version {version}")
         root, description = parse_definition(text, strict=strict)
+        if parent is not None:
+            assert p is not None
+            if p.root is None:
+                raise SchemaError(f"parent type {parent!r} can't be parsed")
+            inherited = {m.key for m in p.root.members}
+            for mem in root.members:
+                if mem.key in inherited:
+                    column = mem.pos - text.rfind("\n", 0, mem.pos)
+                    raise SchemaError(
+                        f"key {mem.key!r} is already defined by {parent!r}", mem.line, column
+                    )
+            root = Object(
+                members=[*p.root.members, *root.members],
+                optional=root.optional,
+                annotations=root.annotations,
+            )
     except SchemaError as e:
         if strict:
             raise
-        return Schema(name, index, version, text, None, None, (), e)
-    return Schema(name, index, version, text, description, root, tuple(flatten(root)))
+        return Schema(name, index, version, text, None, None, (), e, parent, lineage)
+    return Schema(
+        name, index, version, text, description, root, tuple(flatten(root)), None, parent, lineage
+    )
 
 
 def flatten(root: Object) -> list[Field]:

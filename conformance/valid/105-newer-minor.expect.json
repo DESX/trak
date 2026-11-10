@@ -4,6 +4,7 @@
     "name": "old",
     "index": 1,
     "version": "1.0",
+    "parent": null,
     "description": null,
     "parsed": true,
     "annotations": [],
@@ -24,6 +25,7 @@
     "name": "new",
     "index": 2,
     "version": "1.9",
+    "parent": null,
     "description": "From a later minor.",
     "parsed": true,
     "annotations": [],
@@ -47,7 +49,7 @@
   }
 ],
 "events": [
-{"type": "new", "n": 1, "timestamp": "20261107T140210.120Z", "value": {"a": "x"}},
-{"type": "old", "n": 1, "timestamp": "20261107T140322.415Z", "value": {"a": "y"}}
+{"type": "new", "n": 1, "timestamp": "20261107T140210.120Z", "families": {"new": 1}, "value": {"a": "x"}},
+{"type": "old", "n": 1, "timestamp": "20261107T140322.415Z", "families": {"old": 1}, "value": {"a": "y"}}
 ]
 }

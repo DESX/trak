@@ -4,6 +4,7 @@
     "name": "t",
     "index": 1,
     "version": "1.0",
+    "parent": null,
     "description": null,
     "parsed": true,
     "annotations": [],
@@ -74,8 +75,8 @@
   }
 ],
 "events": [
-{"type": "t", "n": 1, "timestamp": "20261106T212000.001Z", "value": {"a": null, "b": null, "c": null, "d": null, "e": null, "g": "only"}},
-{"type": "t", "n": 2, "timestamp": "20261106T212000.002Z", "value": {"a": "1", "b": "2", "c": "3", "d": "x", "e": {"f": "5"}, "g": "all"}},
-{"type": "t", "n": 3, "timestamp": "20261106T212000.003Z", "value": {"a": null, "b": null, "c": null, "d": null, "e": null, "g": "missing keys are absent too"}}
+{"type": "t", "n": 1, "timestamp": "20261106T212000.001Z", "families": {"t": 1}, "value": {"a": null, "b": null, "c": null, "d": null, "e": null, "g": "only"}},
+{"type": "t", "n": 2, "timestamp": "20261106T212000.002Z", "families": {"t": 2}, "value": {"a": "1", "b": "2", "c": "3", "d": "x", "e": {"f": "5"}, "g": "all"}},
+{"type": "t", "n": 3, "timestamp": "20261106T212000.003Z", "families": {"t": 3}, "value": {"a": null, "b": null, "c": null, "d": null, "e": null, "g": "missing keys are absent too"}}
 ]
 }

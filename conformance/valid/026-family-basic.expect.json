@@ -1,0 +1,202 @@
+{
+"types": [
+  {
+    "name": "build",
+    "index": 1,
+    "version": "1.0",
+    "parent": null,
+    "description": "One CI build run.",
+    "parsed": true,
+    "annotations": [],
+    "fields": [
+      {
+        "path": "user",
+        "type": "str",
+        "enum": [],
+        "unknown": null,
+        "block": false,
+        "optional": false,
+        "annotations": [],
+        "description": "who triggered the build"
+      },
+      {
+        "path": "status",
+        "type": "enum",
+        "enum": [
+          "ok",
+          "failed"
+        ],
+        "unknown": null,
+        "block": false,
+        "optional": false,
+        "annotations": [],
+        "description": null
+      },
+      {
+        "path": "duration",
+        "type": "num",
+        "enum": [],
+        "unknown": null,
+        "block": false,
+        "optional": false,
+        "annotations": [
+          {
+            "name": "ms",
+            "text": null
+          }
+        ],
+        "description": "wall-clock time"
+      },
+      {
+        "path": "tags.[]",
+        "type": "str",
+        "enum": [],
+        "unknown": null,
+        "block": false,
+        "optional": false,
+        "annotations": [],
+        "description": null
+      },
+      {
+        "path": "stdout",
+        "type": "str",
+        "enum": [],
+        "unknown": null,
+        "block": true,
+        "optional": false,
+        "annotations": [
+          {
+            "name": "log",
+            "text": null
+          }
+        ],
+        "description": "compiler output"
+      },
+      {
+        "path": "error",
+        "type": "str",
+        "enum": [],
+        "unknown": null,
+        "block": false,
+        "optional": true,
+        "annotations": [],
+        "description": "set when the build failed"
+      }
+    ]
+  },
+  {
+    "name": "build.step",
+    "index": 2,
+    "version": "1.1",
+    "parent": "build",
+    "description": "One step of a build.",
+    "parsed": true,
+    "annotations": [],
+    "fields": [
+      {
+        "path": "user",
+        "type": "str",
+        "enum": [],
+        "unknown": null,
+        "block": false,
+        "optional": false,
+        "annotations": [],
+        "description": "who triggered the build"
+      },
+      {
+        "path": "status",
+        "type": "enum",
+        "enum": [
+          "ok",
+          "failed"
+        ],
+        "unknown": null,
+        "block": false,
+        "optional": false,
+        "annotations": [],
+        "description": null
+      },
+      {
+        "path": "duration",
+        "type": "num",
+        "enum": [],
+        "unknown": null,
+        "block": false,
+        "optional": false,
+        "annotations": [
+          {
+            "name": "ms",
+            "text": null
+          }
+        ],
+        "description": "wall-clock time"
+      },
+      {
+        "path": "tags.[]",
+        "type": "str",
+        "enum": [],
+        "unknown": null,
+        "block": false,
+        "optional": false,
+        "annotations": [],
+        "description": null
+      },
+      {
+        "path": "stdout",
+        "type": "str",
+        "enum": [],
+        "unknown": null,
+        "block": true,
+        "optional": false,
+        "annotations": [
+          {
+            "name": "log",
+            "text": null
+          }
+        ],
+        "description": "compiler output"
+      },
+      {
+        "path": "error",
+        "type": "str",
+        "enum": [],
+        "unknown": null,
+        "block": false,
+        "optional": true,
+        "annotations": [],
+        "description": "set when the build failed"
+      },
+      {
+        "path": "step",
+        "type": "str",
+        "enum": [],
+        "unknown": null,
+        "block": false,
+        "optional": false,
+        "annotations": [],
+        "description": "step name"
+      },
+      {
+        "path": "ok",
+        "type": "enum",
+        "enum": [
+          "yes",
+          "no"
+        ],
+        "unknown": null,
+        "block": false,
+        "optional": false,
+        "annotations": [],
+        "description": null
+      }
+    ]
+  }
+],
+"events": [
+{"type": "build", "n": 1, "timestamp": "20261106T212000.001Z", "families": {"build": 1}, "value": {"user": "ana", "status": "ok", "duration": "910", "tags": [], "stdout": "", "error": null}},
+{"type": "build.step", "n": 1, "timestamp": "20261106T212000.002Z", "families": {"build": 2, "build.step": 1}, "value": {"user": "ana", "status": "ok", "duration": "10", "tags": [], "stdout": "", "error": null, "step": "compile", "ok": "yes"}},
+{"type": "build.step", "n": 2, "timestamp": "20261106T212000.003Z", "families": {"build": 3, "build.step": 2}, "value": {"user": "ana", "status": "ok", "duration": "20", "tags": [], "stdout": "", "error": null, "step": "link", "ok": "no"}},
+{"type": "build", "n": 2, "timestamp": "20261106T212000.004Z", "families": {"build": 4}, "value": {"user": "joel", "status": "failed", "duration": "1", "tags": [], "stdout": "", "error": "link failed"}},
+{"type": "build.step", "n": 3, "timestamp": "20261106T212000.005Z", "families": {"build": 5, "build.step": 3}, "value": {"user": "ana", "status": "ok", "duration": "1", "tags": [], "stdout": "", "error": null, "step": "retry", "ok": "yes"}}
+]
+}

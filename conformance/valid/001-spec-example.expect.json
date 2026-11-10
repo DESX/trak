@@ -4,6 +4,7 @@
     "name": "build",
     "index": 1,
     "version": "1.0",
+    "parent": null,
     "description": "One CI build run.",
     "parsed": true,
     "annotations": [],
@@ -87,6 +88,7 @@
     "name": "deploy",
     "index": 2,
     "version": "1.0",
+    "parent": null,
     "description": "A release pushed to an environment.",
     "parsed": true,
     "annotations": [],
@@ -120,7 +122,7 @@
   }
 ],
 "events": [
-{"type": "build", "n": 1, "timestamp": "20261107T140210.120Z", "value": {"user": "ana", "status": "ok", "duration": "910", "tags": ["ci"], "stdout": "Compiling core...\nDone.", "error": null}},
-{"type": "build", "n": 2, "timestamp": "20261107T140322.415Z", "value": {"user": "joel", "status": "failed", "duration": "1520", "tags": ["ci", "nightly"], "stdout": "Compiling core...\nld: undefined symbol main", "error": "link failed"}}
+{"type": "build", "n": 1, "timestamp": "20261107T140210.120Z", "families": {"build": 1}, "value": {"user": "ana", "status": "ok", "duration": "910", "tags": ["ci"], "stdout": "Compiling core...\nDone.", "error": null}},
+{"type": "build", "n": 2, "timestamp": "20261107T140322.415Z", "families": {"build": 2}, "value": {"user": "joel", "status": "failed", "duration": "1520", "tags": ["ci", "nightly"], "stdout": "Compiling core...\nld: undefined symbol main", "error": "link failed"}}
 ]
 }

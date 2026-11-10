@@ -4,6 +4,7 @@
     "name": "idle",
     "index": 1,
     "version": "1.0",
+    "parent": null,
     "description": "Never written.",
     "parsed": true,
     "annotations": [],
@@ -24,6 +25,7 @@
     "name": "busy",
     "index": 2,
     "version": "1.0",
+    "parent": null,
     "description": null,
     "parsed": true,
     "annotations": [],
@@ -42,7 +44,7 @@
   }
 ],
 "events": [
-{"type": "busy", "n": 1, "timestamp": "20261106T212000.001Z", "value": {"a": "x"}},
-{"type": "busy", "n": 2, "timestamp": "20261106T212000.002Z", "value": {"a": "y"}}
+{"type": "busy", "n": 1, "timestamp": "20261106T212000.001Z", "families": {"busy": 1}, "value": {"a": "x"}},
+{"type": "busy", "n": 2, "timestamp": "20261106T212000.002Z", "families": {"busy": 2}, "value": {"a": "y"}}
 ]
 }

@@ -38,6 +38,7 @@ def decode(path: pathlib.Path) -> dict[str, Any]:
                 "name": s.name,
                 "index": s.index,
                 "version": s.version,
+                "parent": s.parent,
                 "description": s.description,
                 "parsed": s.root is not None,
                 "annotations": annots(s.annotations),
@@ -62,6 +63,7 @@ def decode(path: pathlib.Path) -> dict[str, Any]:
                 "type": e.type,
                 "n": e.n,
                 "timestamp": e.timestamp,
+                "families": {a: e.family_number(a) for a in e.schema.lineage},
                 "value": plain(e.to_native()) if e.schema.root is not None else None,
             }
             for e in r
@@ -73,6 +75,26 @@ def decode(path: pathlib.Path) -> dict[str, Any]:
             assert table.count() == len(rows)
             for row in rows:
                 assert table.get(row["n"]).timestamp == row["timestamp"]
+            # So must family tables, cursors and prev().
+            family = r.family(s.name)
+            members = [e for e in events if s.name in e["families"]]
+            assert family.count() == len(members)
+            for m, row in enumerate(members, 1):
+                assert row["families"][s.name] == m
+                e = family.get(m)
+                assert (e.type, e.n) == (row["type"], row["n"])
+            assert [(e.type, e.n) for e in family] == [(e["type"], e["n"]) for e in members]
+        everything = [(e["type"], e["n"]) for e in events]
+        pages, cursor = [], None
+        while page := r.after(cursor, 3):
+            pages += [(e.type, e.n) for e in page]
+            cursor = page[-1].offset
+        assert pages == everything
+        pages, cursor = [], None
+        while page := r.before(cursor, 4):
+            pages += [(e.type, e.n) for e in page]
+            cursor = page[-1].offset
+        assert pages == everything[::-1]
         return {"types": types, "events": events}
 
 

@@ -1,4 +1,4 @@
-trak 1.0
+trak 1.1
 {
   level: enum(debug, info, warn, error,) @color,
   size: num @unit(bytes) @x.y-z(a b, c),

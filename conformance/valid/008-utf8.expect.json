@@ -4,6 +4,7 @@
     "name": "t",
     "index": 1,
     "version": "1.0",
+    "parent": null,
     "description": null,
     "parsed": true,
     "annotations": [],
@@ -42,6 +43,6 @@
   }
 ],
 "events": [
-{"type": "t", "n": 1, "timestamp": "20261106T212000.001Z", "value": {"name": "Zoë 🚀 日本語", "tags": [["ключ", "значение"], ["🔑", "∞"], ["é", ""]], "block": "naïve\ncafé"}}
+{"type": "t", "n": 1, "timestamp": "20261106T212000.001Z", "families": {"t": 1}, "value": {"name": "Zoë 🚀 日本語", "tags": [["ключ", "значение"], ["🔑", "∞"], ["é", ""]], "block": "naïve\ncafé"}}
 ]
 }

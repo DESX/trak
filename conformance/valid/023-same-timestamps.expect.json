@@ -4,6 +4,7 @@
     "name": "a",
     "index": 1,
     "version": "1.0",
+    "parent": null,
     "description": null,
     "parsed": true,
     "annotations": [],
@@ -24,6 +25,7 @@
     "name": "b",
     "index": 2,
     "version": "1.0",
+    "parent": null,
     "description": null,
     "parsed": true,
     "annotations": [],
@@ -42,15 +44,15 @@
   }
 ],
 "events": [
-{"type": "a", "n": 1, "timestamp": "20261107T000000.000Z", "value": {"i": "0"}},
-{"type": "b", "n": 1, "timestamp": "20000101T000000.000Z", "value": {"i": "0"}},
-{"type": "a", "n": 2, "timestamp": "20261107T000000.000Z", "value": {"i": "1"}},
-{"type": "b", "n": 2, "timestamp": "20000101T000000.000Z", "value": {"i": "1"}},
-{"type": "a", "n": 3, "timestamp": "20261107T000000.000Z", "value": {"i": "2"}},
-{"type": "b", "n": 3, "timestamp": "20000101T000000.000Z", "value": {"i": "2"}},
-{"type": "a", "n": 4, "timestamp": "20261107T000000.000Z", "value": {"i": "3"}},
-{"type": "b", "n": 4, "timestamp": "20000101T000000.000Z", "value": {"i": "3"}},
-{"type": "a", "n": 5, "timestamp": "20261107T000000.000Z", "value": {"i": "4"}},
-{"type": "b", "n": 5, "timestamp": "20000101T000000.000Z", "value": {"i": "4"}}
+{"type": "a", "n": 1, "timestamp": "20261107T000000.000Z", "families": {"a": 1}, "value": {"i": "0"}},
+{"type": "b", "n": 1, "timestamp": "20000101T000000.000Z", "families": {"b": 1}, "value": {"i": "0"}},
+{"type": "a", "n": 2, "timestamp": "20261107T000000.000Z", "families": {"a": 2}, "value": {"i": "1"}},
+{"type": "b", "n": 2, "timestamp": "20000101T000000.000Z", "families": {"b": 2}, "value": {"i": "1"}},
+{"type": "a", "n": 3, "timestamp": "20261107T000000.000Z", "families": {"a": 3}, "value": {"i": "2"}},
+{"type": "b", "n": 3, "timestamp": "20000101T000000.000Z", "families": {"b": 3}, "value": {"i": "2"}},
+{"type": "a", "n": 4, "timestamp": "20261107T000000.000Z", "families": {"a": 4}, "value": {"i": "3"}},
+{"type": "b", "n": 4, "timestamp": "20000101T000000.000Z", "families": {"b": 4}, "value": {"i": "3"}},
+{"type": "a", "n": 5, "timestamp": "20261107T000000.000Z", "families": {"a": 5}, "value": {"i": "4"}},
+{"type": "b", "n": 5, "timestamp": "20000101T000000.000Z", "families": {"b": 5}, "value": {"i": "4"}}
 ]
 }

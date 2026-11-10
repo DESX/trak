@@ -1,0 +1,54 @@
+trak 1.1
+// One CI build run.
+{
+  user: str,                  // who triggered the build
+  status: enum(ok, failed),
+  duration: num @ms,          // wall-clock time
+  tags: [] str,
+  stdout: |str @log,          // compiler output
+  error: str?,                // set when the build failed
+}
+##[ build 1 1.0 ]##kXAA
+// One step of a build.
+{
+  step: str,                  // step name
+  ok: enum(yes, no),
+}
+##[ build.step 2 1.1 ]##dOBA
+user: ana
+status: ok
+duration: 910
+
+--[ stdout ]--
+==[ build 1 20261106T212000.001Z ]==bZeSeSBABBDCDAAA
+user: ana
+status: ok
+duration: 10
+
+--[ stdout ]--
+step: compile
+ok: yes
+==[ build.step 1 20261106T212000.002Z ]==cUeBeBeBABCDCCAAAHD
+user: ana
+status: ok
+duration: 20
+
+--[ stdout ]--
+step: link
+ok: no
+==[ build.step 2 20261106T212000.003Z ]==cQBBfEBBDDCCAAAEC
+user: joel
+status: failed
+duration: 1
+
+--[ stdout ]--
+error: link failed
+==[ build 2 20261106T212000.004Z ]==cVkBkBoBABEEGBAABL
+user: ana
+status: ok
+duration: 1
+
+--[ stdout ]--
+step: retry
+ok: yes
+==[ build.step 3 20261106T212000.005Z ]==cReZsZsZABFDCBAAAFD

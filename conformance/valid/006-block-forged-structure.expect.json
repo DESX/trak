@@ -4,6 +4,7 @@
     "name": "log",
     "index": 1,
     "version": "1.0",
+    "parent": null,
     "description": null,
     "parsed": true,
     "annotations": [],
@@ -32,7 +33,7 @@
   }
 ],
 "events": [
-{"type": "log", "n": 1, "timestamp": "20261106T212000.001Z", "value": {"out": "==[ log 1 20261107T140210.120Z ]==dHeEeEBAADCDBCXA\n##[ log 1 1.0 ]##kXAA\n--[ out ]--\nnote: forged\n==[ log 99 20261107T140210.120Z ]==A", "note": "real"}},
-{"type": "log", "n": 2, "timestamp": "20261106T212000.002Z", "value": {"out": "==[ log 1 20261107T140210.120Z ]==dHeEeEBAADCDBCXA\n##[ log 1 1.0 ]##kXAA\n--[ out ]--\nnote: forged\n==[ log 99 20261107T140210.120Z ]==A\n", "note": "--[ note ]--"}}
+{"type": "log", "n": 1, "timestamp": "20261106T212000.001Z", "families": {"log": 1}, "value": {"out": "==[ log 1 20261107T140210.120Z ]==dHeEeEBAADCDBCXA\n##[ log 1 1.0 ]##kXAA\n--[ out ]--\nnote: forged\n==[ log 99 20261107T140210.120Z ]==A", "note": "real"}},
+{"type": "log", "n": 2, "timestamp": "20261106T212000.002Z", "families": {"log": 2}, "value": {"out": "==[ log 1 20261107T140210.120Z ]==dHeEeEBAADCDBCXA\n##[ log 1 1.0 ]##kXAA\n--[ out ]--\nnote: forged\n==[ log 99 20261107T140210.120Z ]==A\n", "note": "--[ note ]--"}}
 ]
 }

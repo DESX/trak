@@ -11,16 +11,28 @@ from ._jump import jump
 from ._values import NUM, LeafRec, MapNode, Node, Walk
 from .errors import FormatError, SchemaError
 from .reader import Reader
-from .schema import Leaf, List, Map, Object, Schema, Type, build_schema, valid_type_name
+from .schema import (
+    Leaf,
+    List,
+    Map,
+    Object,
+    Schema,
+    Type,
+    build_schema,
+    parent_name,
+    valid_type_name,
+)
 
 
 class _TypeState:
-    __slots__ = ("schema", "ends", "last_ms")
+    __slots__ = ("schema", "ends", "last_ms", "family_count", "has_child")
 
     def __init__(self, schema: Schema, end: int) -> None:
         self.schema = schema
         self.ends = [end]  # end offset of node 0, 1, 2, ...
-        self.last_ms = -(1 << 62)
+        self.last_ms = -(1 << 62)  # the family's latest timestamp, kept on its root
+        self.family_count = 0
+        self.has_child = False
 
 
 def check(path: str | os.PathLike[str]) -> int:
@@ -84,13 +96,23 @@ class _Checker:
         major, minor = f.stamp.split(".")
         if major != "1":
             raise FormatError(f"unsupported schema version {f.stamp}", f.fstart)
-        strict = minor == "0"
+        # 1.0 and 1.1 are parsed strictly; newer minors leniently (DECISIONS I5).
+        strict = minor in ("0", "1")
+        parent = parent_name(f.name, f.stamp)
+        if parent is not None:
+            p = self.types.get(parent)
+            if p is None:
+                raise FormatError(f"schema {f.name} comes before its parent {parent}", f.fstart)
+            p.has_child = True
+            if p.schema.root is None:
+                strict = False  # the child's object can't be known either
         try:
             text = body.decode("ascii")
         except UnicodeDecodeError as e:
             raise FormatError("schema is not ASCII", f.start + e.start) from None
+        types = {n: t.schema for n, t in self.types.items()}
         try:
-            schema = build_schema(f.name, f.num, f.stamp, text, strict=strict)
+            schema = build_schema(f.name, f.num, f.stamp, text, strict=strict, types=types)
         except SchemaError as e:
             raise FormatError(f"schema {f.name}: {e}", f.start) from None
         state = _TypeState(schema, f.end)
@@ -109,8 +131,16 @@ class _Checker:
             ms = _time.to_ms(f.stamp)
         except ValueError:
             raise FormatError(f"invalid timestamp {f.stamp}", f.fstart) from None
-        if ms < t.last_ms:
-            raise FormatError(f"{f.name} timestamp goes backwards", f.fstart)
+        lineage = [self.types[a] for a in t.schema.lineage]
+        family = lineage[0]
+        if ms < family.last_ms:
+            what = f"family {family.schema.name}" if family.has_child else f.name
+            raise FormatError(f"{what} timestamp goes backwards", f.fstart)
+        levels = lineage if t.has_child else lineage[:-1]
+        want = [a.family_count + 1 for a in levels]
+        got = list(f.vlqs[6 : 6 + min(f.vlqs[5], len(want))])
+        if got != want:
+            raise FormatError(f"{f.name} family numbers are {got}, expected {want}", f.fstart)
         self.pointer(f, f.vlqs[1], t.ends[n - 1], "step")
         self.pointer(f, f.vlqs[2], t.ends[jump(n)], "jump")
         dt = f.vlqs[4]
@@ -123,7 +153,9 @@ class _Checker:
             walk = Walk(root, f.values, f.start, f.fstart)
             self.framing(root, walk.tree, b"", walk, -1)
         t.ends.append(f.end)
-        t.last_ms = ms
+        family.last_ms = ms
+        for a in lineage:
+            a.family_count += 1
 
     def framing(self, t: Type, node: Node, path: bytes, walk: Walk, plen: int) -> None:
         """Check the bytes around each value: paths, separators and block labels."""

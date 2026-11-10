@@ -5,21 +5,36 @@ from __future__ import annotations
 import builtins
 import contextlib
 import datetime as _dt
+import heapq
 import mmap
 import os
 import re
 from collections import OrderedDict
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from typing import Any
 
 from . import _footer, _time
 from ._footer import Footer
 from ._jump import jump
 from ._values import LeafRec, MapNode, Node, Walk
-from .errors import FormatError, SchemaError, TrakError, UnsupportedVersion
+from .errors import FormatError, SchemaError, TrakError, UnsupportedVersion, ValueError
 from .schema import Schema, build_schema
 
-__all__ = ["Event", "Reader", "Table", "open"]
+__all__ = ["Event", "Family", "Reader", "Table", "open"]
+
+_BELOW = -(1 << 62)
+
+
+def build_schemas(reader: Reader, footers: list[Footer]) -> list[Schema]:
+    """Parse schema objects in index order, so that children find their parents."""
+    out: list[Schema] = []
+    by_name: dict[str, Schema] = {}
+    for f in footers:
+        s = build_schema(f.name, f.num, f.stamp, reader._schema_text(f), types=by_name)
+        out.append(s)
+        by_name[s.name] = s
+    return out
+
 
 _MAGIC = re.compile(rb"trak (0|[1-9][0-9]*)\.(0|[1-9][0-9]*)")
 _CACHE_SIZE = 4096
@@ -65,10 +80,14 @@ class Reader:
         self._size = size
         self._end, self._schema_footers = self._recover(size)
         self._latest = {}
-        self._schemas = [
-            build_schema(f.name, f.num, f.stamp, self._schema_text(f)) for f in self._schema_footers
-        ]
+        self._schemas = build_schemas(self, self._schema_footers)
         self._by_name = {s.name: s for s in self._schemas}
+        # Where each type's first child schema ends: from there on, its events carry their
+        # number in its own family (SPEC §6).
+        self._child_from: dict[str, int] = {}
+        for s, f in zip(self._schemas, self._schema_footers, strict=True):
+            if s.parent is not None and s.parent not in self._child_from:
+                self._child_from[s.parent] = f.end
 
     def refresh(self) -> bool:
         """Pick up objects appended since open. Returns True when anything changed."""
@@ -124,6 +143,77 @@ class Reader:
     def table(self, name: str) -> Table:
         return Table(self, self.schema(name))
 
+    def family(self, name: str) -> Family:
+        """The events of a type and all its descendants, in file order (SPEC §1)."""
+        return Family(self, self.schema(name))
+
+    def before(self, cursor: int | None = None, limit: int = 100) -> list[Event]:
+        """Up to ``limit`` events that start before ``cursor``, newest first.
+
+        A cursor is an event's ``offset``, or None for the end of the file. Pass the last
+        event returned to get the next page. An empty list means there are no more.
+        """
+        c = self._end if cursor is None else self._cursor(cursor)
+        out: list[Event] = []
+        f = None if c == self._magic_end else self._footer(c)
+        while f is not None and len(out) < limit:
+            if not f.is_schema:
+                out.append(self._event(f))
+            f = self._prev(f)
+        return out
+
+    def after(self, cursor: int | None = None, limit: int = 100) -> list[Event]:
+        """Up to ``limit`` events that start after ``cursor``, oldest first.
+
+        A cursor is an event's ``offset``, or None for the start of the file. Pass the last
+        event returned to get the next page. An empty list means there are no more.
+        """
+        c = -1 if cursor is None else self._cursor(cursor)
+        if limit <= 0:
+            return []
+        # The objects after c can't be found by scanning forward, since logged content may
+        # look like footers. Instead find, per type, its first event after c by seeking on
+        # offsets, then walk back from a point that has at least `limit` events before it.
+        bound = self._end
+        self._latest_all()
+        for s in self._schemas:
+            top = self._latest_footer(s)
+            if top.is_schema:
+                continue
+            first = self._seek(s, _start, c + 1)
+            if first is not None and first.node + limit - 1 <= top.node:
+                bound = min(bound, self._navigate(top, first.node + limit - 1).end)
+        found: list[Footer] = []
+        f = None if bound == self._magic_end else self._footer(bound)
+        while f is not None and f.start > c:
+            if not f.is_schema:
+                found.append(f)
+            f = self._prev(f)
+        return [self._event(g) for g in reversed(found[-limit:])]
+
+    def _cursor(self, c: int) -> int:
+        """Check that ``c`` is where an object starts (SPEC §11's footer test)."""
+        if c == self._magic_end or c == self._end:
+            return c
+        if not self._magic_end < c < self._end:
+            raise ValueError(f"cursor {c} is outside the file's valid objects")
+        try:
+            f = self._footer(c)
+            schema = self._by_name.get(f.name)
+            if schema is None:
+                raise FormatError(f"unknown type {f.name!r}", f.fstart)
+            if not f.is_schema and schema.root is not None:
+                Walk(schema.root, f.values, f.start, f.fstart)
+        except FormatError:
+            raise ValueError(f"cursor {c} is not the start of an object") from None
+        return c
+
+    def _event(self, f: Footer) -> Event:
+        schema = self._by_name.get(f.name)
+        if schema is None:
+            raise FormatError(f"event of type {f.name!r} has no schema", f.fstart)
+        return Event(self, schema, f)
+
     def __iter__(self) -> Iterator[Event]:
         """Every event in file order."""
         footers = []
@@ -132,12 +222,8 @@ class Reader:
             footers.append(f)
             f = self._prev(f)
         for f in reversed(footers):
-            if f.is_schema:
-                continue
-            schema = self._by_name.get(f.name)
-            if schema is None:
-                raise FormatError(f"event of type {f.name!r} has no schema", f.fstart)
-            yield Event(self, schema, f)
+            if not f.is_schema:
+                yield self._event(f)
 
     # --- footers and navigation ---------------------------------------------------
 
@@ -195,10 +281,9 @@ class Reader:
         f = self._footer(end)
         chain = self._schema_chain(f)
         if not f.is_schema:
-            s = next((c for c in chain if c.name == f.name), None)
-            if s is None:
+            if not any(c.name == f.name for c in chain):
                 raise FormatError(f"event of type {f.name!r} has no schema", f.fstart)
-            schema = build_schema(s.name, s.num, s.stamp, self._schema_text(s))
+            schema = next(s for s in build_schemas(self, chain) if s.name == f.name)
             if schema.root is not None:
                 Walk(schema.root, f.values, f.start, f.fstart)
         return chain
@@ -261,21 +346,77 @@ class Reader:
         self._latest[schema.index] = f
         return f
 
+    def _hop(self, f: Footer, jump_: bool) -> Footer:
+        """Follow ``f``'s jump or step pointer, checking that it lands on the right node."""
+        want = jump(f.node) if jump_ else f.node - 1
+        g = self._follow(f, f.vlqs[2] if jump_ else f.vlqs[1])
+        if g.name != f.name or g.node != want:
+            raise FormatError(f"pointer leads to the wrong node (wanted {f.name} {want})", f.fstart)
+        return g
+
+    def _seek(self, schema: Schema, key: Callable[[Footer], int], m: int) -> Footer | None:
+        """The first event of a type whose key is ``>= m``, for a key that never decreases
+        along the chain (SPEC §7, Seek). None when there is none."""
+        f = self._latest_footer(schema)
+        if f.is_schema or key(f) < m:
+            return None
+        while f.node > 1:
+            if jump(f.node) > 0:
+                g = self._hop(f, True)
+                if key(g) >= m:
+                    f = g
+                    continue
+            g = self._hop(f, False)
+            if key(g) < m:
+                break
+            f = g
+        return f
+
+    def family_number(self, f: Footer, family: str) -> int:
+        """An event's number in one of its families (SPEC §6, Family numbers)."""
+        schema = self._by_name[f.name]
+        level = schema.lineage.index(family)
+        if level == len(schema.lineage) - 1:
+            child_from = self._child_from.get(f.name)
+            if child_from is None or child_from > f.start:
+                return f.num
+        if level >= f.vlqs[5]:
+            raise FormatError(f"{f.name} event has no number in family {family}", f.fstart)
+        return f.vlqs[6 + level]
+
+    def _latest_all(self) -> dict[int, Footer]:
+        """The latest node of every type, in one walk back: each event names its own type and
+        points at its dir type's latest node, so about 2K events cover every type (SPEC §7)."""
+        latest = self._latest
+        want = len(self._schemas)
+        f = self._last()
+        while f is not None and len(latest) < want:
+            s = self._by_name.get(f.name)
+            if s is not None and s.index not in latest:
+                latest[s.index] = f
+            if not f.is_schema:
+                dt = f.vlqs[4]
+                if dt and dt not in latest and dt <= want:
+                    g = self._follow(f, f.vlqs[3])
+                    if g.name != self._schemas[dt - 1].name:
+                        raise FormatError("directory pointer leads to the wrong type", g.end)
+                    latest[dt] = g
+            f = self._prev(f)
+        return latest
+
     def _navigate(self, f: Footer, m: int) -> Footer:
         """From node ``f`` walk down to node ``m`` of the same type (SPEC §7)."""
-        name = f.name
         while f.node > m:
-            j = jump(f.node)
-            if j >= m:
-                f2, want = self._follow(f, f.vlqs[2]), j
-            else:
-                f2, want = self._follow(f, f.vlqs[1]), f.node - 1
-            if f2.name != name or f2.node != want:
-                raise FormatError(
-                    f"pointer leads to the wrong node (wanted {name} {want})", f.fstart
-                )
-            f = f2
+            f = self._hop(f, jump(f.node) >= m)
         return f
+
+
+def _start(f: Footer) -> int:
+    return f.start if not f.is_schema else _BELOW
+
+
+def _stamp_ms(f: Footer) -> int:
+    return _time.to_ms(f.stamp) if not f.is_schema else _BELOW
 
 
 class Table:
@@ -341,15 +482,87 @@ class Table:
 
     def at_time(self, ts: str | _dt.datetime) -> Event | None:
         """The first event with timestamp ``>= ts``, or None."""
+        f = self.reader._seek(self.schema, _stamp_ms, _time.to_ms(ts))
+        return None if f is None else Event(self.reader, self.schema, f)
+
+
+class Family:
+    """The events of a type and its descendants, numbered from 1 in file order (SPEC §1)."""
+
+    def __init__(self, reader: Reader, schema: Schema) -> None:
+        self.reader = reader
+        self.schema = schema
+        #: The family's types: the type itself first, then its descendants in index order.
+        self.types = [s for s in reader._schemas if schema.name in s.lineage]
+
+    @property
+    def name(self) -> str:
+        return self.schema.name
+
+    def _key(self, f: Footer) -> int:
+        return self.reader.family_number(f, self.name) if not f.is_schema else _BELOW
+
+    def _latest(self) -> list[Footer]:
+        if len(self.types) > 1:
+            self.reader._latest_all()
+        tops = (self.reader._latest_footer(s) for s in self.types)
+        return [f for f in tops if not f.is_schema]
+
+    def count(self) -> int:
+        return max((self._key(f) for f in self._latest()), default=0)
+
+    def __len__(self) -> int:
+        return self.count()
+
+    def latest(self) -> Event | None:
+        tops = self._latest()
+        if not tops:
+            return None
+        return self.reader._event(max(tops, key=self._key))
+
+    def get(self, m: int) -> Event:
+        """Row ``m``: a seek in each of the family's types, O(k log n)."""
+        if m >= 1:
+            for s in self.types:
+                f = self.reader._seek(s, self._key, m)
+                if f is not None and self._key(f) == m:
+                    return Event(self.reader, s, f)
+        raise IndexError(f"family {self.name} has no row {m}")
+
+    def __getitem__(self, m: int) -> Event:
+        return self.get(m)
+
+    def range(self, a: int, b: int) -> Iterator[Event]:
+        """Rows ``a`` to ``b`` inclusive, descending when ``a > b``: one range per type,
+        merged by family number."""
+        count = self.count()
+        for x in (a, b):
+            if not 1 <= x <= count:
+                raise IndexError(f"family {self.name} has no row {x}")
+        lo, hi = min(a, b), max(a, b)
+        runs = []
+        for s in self.types:
+            first = self.reader._seek(s, self._key, lo)
+            if first is None or self._key(first) > hi:
+                continue
+            after = self.reader._seek(s, self._key, hi + 1)
+            last = (after.node if after is not None else Table(self.reader, s).count() + 1) - 1
+            t = Table(self.reader, s)
+            run = t.range(first.node, last) if a <= b else t.range(last, first.node)
+            runs.append((self._key(e.footer), e) for e in run)
+        merged = heapq.merge(*runs, key=lambda p: p[0], reverse=a > b)
+        return (e for _, e in merged)
+
+    def __iter__(self) -> Iterator[Event]:
+        count = self.count()
+        return self.range(1, count) if count else iter(())
+
+    def at_time(self, ts: str | _dt.datetime) -> Event | None:
+        """The first row with timestamp ``>= ts``, or None. Timestamps never decrease within a
+        family, so it's the earliest of each type's first such event."""
         want = _time.to_ms(ts)
-        lo, hi = 1, self.count() + 1
-        while lo < hi:
-            mid = (lo + hi) // 2
-            if _time.to_ms(self._footer(mid).stamp) >= want:
-                hi = mid
-            else:
-                lo = mid + 1
-        return None if lo > self.count() else self.get(lo)
+        found = [f for s in self.types if (f := self.reader._seek(s, _stamp_ms, want)) is not None]
+        return None if not found else self.reader._event(min(found, key=self._key))
 
 
 class Event:
@@ -370,6 +583,20 @@ class Event:
     @property
     def time(self) -> _dt.datetime:
         return _time.to_datetime(self.footer.stamp)
+
+    def prev(self) -> Event | None:
+        """The previous event of the same type, in one read, or None for event 1."""
+        if self.footer.num == 1:
+            return None
+        return Event(self._reader, self.schema, self._reader._hop(self.footer, False))
+
+    def family_number(self, family: str | None = None) -> int:
+        """This event's row number in ``family``: its own type or an ancestor. The default
+        is the root family."""
+        name = self.schema.lineage[0] if family is None else family
+        if name not in self.schema.lineage:
+            raise KeyError(f"{self.type} is not in family {name!r}")
+        return self._reader.family_number(self.footer, name)
 
     def __repr__(self) -> str:
         return f"<trak.Event {self.type} {self.n} {self.timestamp}>"

@@ -15,17 +15,19 @@ Read::
 
 from ._check import check
 from .errors import FormatError, SchemaError, TrakError, UnsupportedVersion, ValueError
-from .reader import Event, Reader, Table, open
+from .reader import Event, Family, Reader, Table, open
 from .schema import Annotation, Field, Schema
-from .writer import Writer, create, open_append
+from .writer import Pos, Writer, create, open_append
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 
 __all__ = [
     "Annotation",
     "Event",
+    "Family",
     "Field",
     "FormatError",
+    "Pos",
     "Reader",
     "Schema",
     "SchemaError",

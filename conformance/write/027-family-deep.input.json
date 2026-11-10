@@ -1,0 +1,22 @@
+[
+{"op": "define", "name": "a", "schema": "{ x: num }\n"},
+{"op": "write", "type": "a", "value": {"x": 1}, "timestamp": "20261106T212000.001Z"},
+{"op": "write", "type": "a", "value": {"x": 2}, "timestamp": "20261106T212000.002Z"},
+{"op": "define", "name": "a.b", "schema": "// A child.\n{ y: str }\n"},
+{"op": "define", "name": "other", "schema": "{ z: str }\n"},
+{"op": "write", "type": "a.b", "value": {"x": 3, "y": "b1"}, "timestamp": "20261106T212000.003Z"},
+{"op": "write", "type": "other", "value": {"z": "outside the family"}, "timestamp": "20261106T212000.004Z"},
+{"op": "write", "type": "a", "value": {"x": 4}, "timestamp": "20261106T212000.005Z"},
+{"op": "define", "name": "a.b.c", "schema": "{ w: [] str }\n"},
+{"op": "define", "name": "a.d", "schema": "{ d: |str? }\n"},
+{"op": "write", "type": "a.b.c", "value": {"x": 5, "y": "b0", "w": []}, "timestamp": "20261106T212000.006Z"},
+{"op": "write", "type": "a.b", "value": {"x": 6, "y": "b1"}, "timestamp": "20261106T212000.007Z"},
+{"op": "write", "type": "a.d", "value": {"x": 7, "d": null}, "timestamp": "20261106T212000.008Z"},
+{"op": "write", "type": "a.b.c", "value": {"x": 8, "y": "b3", "w": []}, "timestamp": "20261106T212000.009Z"},
+{"op": "write", "type": "a", "value": {"x": 9}, "timestamp": "20261106T212000.010Z"},
+{"op": "write", "type": "a.d", "value": {"x": 10, "d": "line 5\n"}, "timestamp": "20261106T212000.011Z"},
+{"op": "write", "type": "other", "value": {"z": "6"}, "timestamp": "20261106T212000.012Z"},
+{"op": "write", "type": "a.b.c", "value": {"x": 12, "y": "b7", "w": ["7"]}, "timestamp": "20261106T212000.013Z"},
+{"op": "write", "type": "a.b", "value": {"x": 13, "y": "b8"}, "timestamp": "20261106T212000.014Z"},
+{"op": "write", "type": "a", "value": {"x": 14}, "timestamp": "20261106T212000.015Z"}
+]

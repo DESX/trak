@@ -1,0 +1,9 @@
+[
+{"op": "define", "name": "build", "schema": "// One CI build run.\n{\n  user: str,                  // who triggered the build\n  status: enum(ok, failed),\n  duration: num @ms,          // wall-clock time\n  tags: [] str,\n  stdout: |str @log,          // compiler output\n  error: str?,                // set when the build failed\n}\n"},
+{"op": "define", "name": "build.step", "schema": "// One step of a build.\n{\n  step: str,                  // step name\n  ok: enum(yes, no),\n}\n"},
+{"op": "write", "type": "build", "value": {"user": "ana", "status": "ok", "duration": 910, "tags": [], "stdout": "", "error": null}, "timestamp": "20261106T212000.001Z"},
+{"op": "write", "type": "build.step", "value": {"user": "ana", "status": "ok", "duration": 10, "tags": [], "stdout": "", "error": null, "step": "compile", "ok": "yes"}, "timestamp": "20261106T212000.002Z"},
+{"op": "write", "type": "build.step", "value": {"user": "ana", "status": "ok", "duration": 20, "tags": [], "stdout": "", "error": null, "step": "link", "ok": "no"}, "timestamp": "20261106T212000.003Z"},
+{"op": "write", "type": "build", "value": {"user": "joel", "status": "failed", "duration": 1, "tags": [], "stdout": "", "error": "link failed"}, "timestamp": "20261106T212000.004Z"},
+{"op": "write", "type": "build.step", "value": {"user": "ana", "status": "ok", "duration": 1, "tags": [], "stdout": "", "error": null, "step": "retry", "ok": "yes"}, "timestamp": "20261106T212000.005Z"}
+]

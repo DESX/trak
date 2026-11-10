@@ -1,0 +1,9 @@
+trak 1.1
+{ x: str }
+##[ a 1 1.0 ]##LAA
+{ y: str }
+##[ a.b 2 1.0 ]##LBA
+y: alone
+==[ a.b 1 20261107T140210.120Z ]==JBBBAAF
+x: root
+==[ a 1 20261107T140210.120Z ]==IdGdGcAAAE

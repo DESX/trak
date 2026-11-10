@@ -1,4 +1,4 @@
-trak 1.0
+trak 1.1
 { a: str?, b: num?, c: |str?, d: enum(x)?, e: { f: str }?, g: str }
 ##[ t 1 1.0 ]##cQAA
 g: only

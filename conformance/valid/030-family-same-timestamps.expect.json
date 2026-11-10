@@ -1,0 +1,65 @@
+{
+"types": [
+  {
+    "name": "run",
+    "index": 1,
+    "version": "1.0",
+    "parent": null,
+    "description": null,
+    "parsed": true,
+    "annotations": [],
+    "fields": [
+      {
+        "path": "i",
+        "type": "num",
+        "enum": [],
+        "unknown": null,
+        "block": false,
+        "optional": false,
+        "annotations": [],
+        "description": null
+      }
+    ]
+  },
+  {
+    "name": "run.part",
+    "index": 2,
+    "version": "1.1",
+    "parent": "run",
+    "description": null,
+    "parsed": true,
+    "annotations": [],
+    "fields": [
+      {
+        "path": "i",
+        "type": "num",
+        "enum": [],
+        "unknown": null,
+        "block": false,
+        "optional": false,
+        "annotations": [],
+        "description": null
+      },
+      {
+        "path": "p",
+        "type": "str",
+        "enum": [],
+        "unknown": null,
+        "block": false,
+        "optional": false,
+        "annotations": [],
+        "description": null
+      }
+    ]
+  }
+],
+"events": [
+{"type": "run", "n": 1, "timestamp": "20261107T000000.000Z", "families": {"run": 1}, "value": {"i": "0"}},
+{"type": "run.part", "n": 1, "timestamp": "20261107T000000.000Z", "families": {"run": 2, "run.part": 1}, "value": {"i": "1", "p": "1"}},
+{"type": "run", "n": 2, "timestamp": "20261107T000000.000Z", "families": {"run": 3}, "value": {"i": "2"}},
+{"type": "run.part", "n": 2, "timestamp": "20261107T000000.000Z", "families": {"run": 4, "run.part": 2}, "value": {"i": "3", "p": "3"}},
+{"type": "run", "n": 3, "timestamp": "20261107T000000.000Z", "families": {"run": 5}, "value": {"i": "4"}},
+{"type": "run.part", "n": 3, "timestamp": "20261107T000000.000Z", "families": {"run": 6, "run.part": 3}, "value": {"i": "5", "p": "5"}},
+{"type": "run", "n": 4, "timestamp": "20261107T000000.001Z", "families": {"run": 7}, "value": {"i": "6"}}
+]
+}

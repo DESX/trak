@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "trak-log"
-version = "1.0.0"
+version = "1.1.0"
 description = "Reference library for trak, a log format that programs write and read, and people can read too."
 readme = "README.md"
 license = "MIT"

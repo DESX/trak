@@ -4,6 +4,7 @@
     "name": "t",
     "index": 1,
     "version": "1.0",
+    "parent": null,
     "description": null,
     "parsed": true,
     "annotations": [],
@@ -32,6 +33,6 @@
   }
 ],
 "events": [
-{"type": "t", "n": 1, "timestamp": "20261106T212000.001Z", "value": {"outs": ["one\n", "two", ""], "by": [["k.1", "v\nv"]]}}
+{"type": "t", "n": 1, "timestamp": "20261106T212000.001Z", "families": {"t": 1}, "value": {"outs": ["one\n", "two", ""], "by": [["k.1", "v\nv"]]}}
 ]
 }

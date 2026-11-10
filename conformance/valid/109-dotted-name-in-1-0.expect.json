@@ -1,0 +1,50 @@
+{
+"types": [
+  {
+    "name": "a",
+    "index": 1,
+    "version": "1.0",
+    "parent": null,
+    "description": null,
+    "parsed": true,
+    "annotations": [],
+    "fields": [
+      {
+        "path": "x",
+        "type": "str",
+        "enum": [],
+        "unknown": null,
+        "block": false,
+        "optional": false,
+        "annotations": [],
+        "description": null
+      }
+    ]
+  },
+  {
+    "name": "a.b",
+    "index": 2,
+    "version": "1.0",
+    "parent": null,
+    "description": null,
+    "parsed": true,
+    "annotations": [],
+    "fields": [
+      {
+        "path": "y",
+        "type": "str",
+        "enum": [],
+        "unknown": null,
+        "block": false,
+        "optional": false,
+        "annotations": [],
+        "description": null
+      }
+    ]
+  }
+],
+"events": [
+{"type": "a.b", "n": 1, "timestamp": "20261107T140210.120Z", "families": {"a.b": 1}, "value": {"y": "alone"}},
+{"type": "a", "n": 1, "timestamp": "20261107T140210.120Z", "families": {"a": 1}, "value": {"x": "root"}}
+]
+}

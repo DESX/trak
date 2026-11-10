@@ -1,0 +1,12 @@
+trak 1.1
+{ x: str }
+##[ p 1 1.0 ]##LAA
+{ y: str }
+##[ p.c 2 1.1 ]##LBA
+x: 1
+==[ p 1 20261107T140210.120Z ]==FbHbHBACBcZB
+x: 2
+y: 3
+==[ p.c 1 20261107T140210.120Z ]==KbZbZbZADCFGBB
+x: 4
+==[ p 2 20261107T140322.415Z ]==FcIcIeGABDB

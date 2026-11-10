@@ -1,0 +1,166 @@
+{
+"types": [
+  {
+    "name": "a",
+    "index": 1,
+    "version": "1.0",
+    "parent": null,
+    "description": null,
+    "parsed": true,
+    "annotations": [],
+    "fields": [
+      {
+        "path": "x",
+        "type": "num",
+        "enum": [],
+        "unknown": null,
+        "block": false,
+        "optional": false,
+        "annotations": [],
+        "description": null
+      }
+    ]
+  },
+  {
+    "name": "a.b",
+    "index": 2,
+    "version": "1.1",
+    "parent": "a",
+    "description": "A child.",
+    "parsed": true,
+    "annotations": [],
+    "fields": [
+      {
+        "path": "x",
+        "type": "num",
+        "enum": [],
+        "unknown": null,
+        "block": false,
+        "optional": false,
+        "annotations": [],
+        "description": null
+      },
+      {
+        "path": "y",
+        "type": "str",
+        "enum": [],
+        "unknown": null,
+        "block": false,
+        "optional": false,
+        "annotations": [],
+        "description": null
+      }
+    ]
+  },
+  {
+    "name": "other",
+    "index": 3,
+    "version": "1.0",
+    "parent": null,
+    "description": null,
+    "parsed": true,
+    "annotations": [],
+    "fields": [
+      {
+        "path": "z",
+        "type": "str",
+        "enum": [],
+        "unknown": null,
+        "block": false,
+        "optional": false,
+        "annotations": [],
+        "description": null
+      }
+    ]
+  },
+  {
+    "name": "a.b.c",
+    "index": 4,
+    "version": "1.1",
+    "parent": "a.b",
+    "description": null,
+    "parsed": true,
+    "annotations": [],
+    "fields": [
+      {
+        "path": "x",
+        "type": "num",
+        "enum": [],
+        "unknown": null,
+        "block": false,
+        "optional": false,
+        "annotations": [],
+        "description": null
+      },
+      {
+        "path": "y",
+        "type": "str",
+        "enum": [],
+        "unknown": null,
+        "block": false,
+        "optional": false,
+        "annotations": [],
+        "description": null
+      },
+      {
+        "path": "w.[]",
+        "type": "str",
+        "enum": [],
+        "unknown": null,
+        "block": false,
+        "optional": false,
+        "annotations": [],
+        "description": null
+      }
+    ]
+  },
+  {
+    "name": "a.d",
+    "index": 5,
+    "version": "1.1",
+    "parent": "a",
+    "description": null,
+    "parsed": true,
+    "annotations": [],
+    "fields": [
+      {
+        "path": "x",
+        "type": "num",
+        "enum": [],
+        "unknown": null,
+        "block": false,
+        "optional": false,
+        "annotations": [],
+        "description": null
+      },
+      {
+        "path": "d",
+        "type": "str",
+        "enum": [],
+        "unknown": null,
+        "block": true,
+        "optional": true,
+        "annotations": [],
+        "description": null
+      }
+    ]
+  }
+],
+"events": [
+{"type": "a", "n": 1, "timestamp": "20261106T212000.001Z", "families": {"a": 1}, "value": {"x": "1"}},
+{"type": "a", "n": 2, "timestamp": "20261106T212000.002Z", "families": {"a": 2}, "value": {"x": "2"}},
+{"type": "a.b", "n": 1, "timestamp": "20261106T212000.003Z", "families": {"a": 3, "a.b": 1}, "value": {"x": "3", "y": "b1"}},
+{"type": "other", "n": 1, "timestamp": "20261106T212000.004Z", "families": {"other": 1}, "value": {"z": "outside the family"}},
+{"type": "a", "n": 3, "timestamp": "20261106T212000.005Z", "families": {"a": 4}, "value": {"x": "4"}},
+{"type": "a.b.c", "n": 1, "timestamp": "20261106T212000.006Z", "families": {"a": 5, "a.b": 2, "a.b.c": 1}, "value": {"x": "5", "y": "b0", "w": []}},
+{"type": "a.b", "n": 2, "timestamp": "20261106T212000.007Z", "families": {"a": 6, "a.b": 3}, "value": {"x": "6", "y": "b1"}},
+{"type": "a.d", "n": 1, "timestamp": "20261106T212000.008Z", "families": {"a": 7, "a.d": 1}, "value": {"x": "7", "d": null}},
+{"type": "a.b.c", "n": 2, "timestamp": "20261106T212000.009Z", "families": {"a": 8, "a.b": 4, "a.b.c": 2}, "value": {"x": "8", "y": "b3", "w": []}},
+{"type": "a", "n": 4, "timestamp": "20261106T212000.010Z", "families": {"a": 9}, "value": {"x": "9"}},
+{"type": "a.d", "n": 2, "timestamp": "20261106T212000.011Z", "families": {"a": 10, "a.d": 2}, "value": {"x": "10", "d": "line 5\n"}},
+{"type": "other", "n": 2, "timestamp": "20261106T212000.012Z", "families": {"other": 2}, "value": {"z": "6"}},
+{"type": "a.b.c", "n": 3, "timestamp": "20261106T212000.013Z", "families": {"a": 11, "a.b": 5, "a.b.c": 3}, "value": {"x": "12", "y": "b7", "w": ["7"]}},
+{"type": "a.b", "n": 3, "timestamp": "20261106T212000.014Z", "families": {"a": 12, "a.b": 6}, "value": {"x": "13", "y": "b8"}},
+{"type": "a", "n": 5, "timestamp": "20261106T212000.015Z", "families": {"a": 13}, "value": {"x": "14"}}
+]
+}

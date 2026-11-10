@@ -4,6 +4,7 @@
     "name": "t",
     "index": 1,
     "version": "1.0",
+    "parent": null,
     "description": null,
     "parsed": true,
     "annotations": [],
@@ -66,7 +67,7 @@
   }
 ],
 "events": [
-{"type": "t", "n": 1, "timestamp": "20261106T212000.001Z", "value": {"level": "warn", "size": "1024", "ids": ["a", "b"]}},
-{"type": "t", "n": 2, "timestamp": "20261106T212000.002Z", "value": {"level": "debug", "size": "0", "ids": []}}
+{"type": "t", "n": 1, "timestamp": "20261106T212000.001Z", "families": {"t": 1}, "value": {"level": "warn", "size": "1024", "ids": ["a", "b"]}},
+{"type": "t", "n": 2, "timestamp": "20261106T212000.002Z", "families": {"t": 2}, "value": {"level": "debug", "size": "0", "ids": []}}
 ]
 }

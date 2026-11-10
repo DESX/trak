@@ -53,13 +53,17 @@ def J(n: int) -> int:
 class Raw:
     """Builds files object by object, with every footer field under the caller's control."""
 
-    def __init__(self, magic: bytes = b"trak 1.0\n") -> None:
+    def __init__(self, magic: bytes = b"trak 1.1\n") -> None:
         self.buf = bytearray(magic)
         self.names: list[str] = []
         self.ends: dict[str, list[int]] = {}  # node ends per type, node 0 = schema
         self.schema_end: int | None = None
         self.cov = [-1]
         self.seq = 0
+        # Families, straight from SPEC §5 and §6: a 1.1 schema named P.x is a child of P.
+        self.lineage: dict[str, list[str]] = {}
+        self.has_child: set[str] = set()
+        self.family_count: dict[str, int] = {}
 
     def schema(
         self,
@@ -86,6 +90,13 @@ class Raw:
         self.schema_end = len(self.buf)
         self.ends[name] = [self.schema_end]
         self.cov.append(-1)
+        parent = name.rsplit(".", 1)[0] if "." in name else None
+        if parent in self.lineage and version != "1.0":
+            self.lineage[name] = [*self.lineage[parent], name]
+            self.has_child.add(parent)
+        else:
+            self.lineage[name] = [name]
+        self.family_count[name] = 0
 
     def event(
         self,
@@ -97,8 +108,12 @@ class Raw:
         dir_type: int | None = None,
         ext: tuple[int, ...] = (),
         n: int | None = None,
+        family: tuple[int, ...] | None = None,
     ) -> None:
-        """``leaves`` are (path, value, block) in order; ``values`` are the value VLQs."""
+        """``leaves`` are (path, value, block) in order; ``values`` are the value VLQs.
+
+        Family numbers are computed unless ``family`` overrides them; ``ext`` adds later
+        extensions after them."""
         start = len(self.buf)
         body = bytearray()
         for path, value, block in leaves:
@@ -114,6 +129,13 @@ class Raw:
         self.seq += 1
         assert self.schema_end is not None
         dir_end = self.schema_end if dir_type == 0 else self.ends[self.names[dir_type - 1]][-1]
+        lineage = self.lineage[name]
+        levels = lineage if name in self.has_child else lineage[:-1]
+        if family is None:
+            family = tuple(self.family_count[a] + 1 for a in levels)
+        for a in lineage:
+            self.family_count[a] += 1
+        ext = (*family, *ext)
         vlqs = [
             len(body),
             start - ends[n - 1] + 1,
@@ -473,6 +495,81 @@ def w_top_level_annotation(o: Ops) -> None:
     o.write("t", {"a": "x"})
 
 
+STEP = """// One step of a build.
+{
+  step: str,                  // step name
+  ok: enum(yes, no),
+}
+"""
+
+
+def w_family_basic(o: Ops) -> None:
+    o.define("build", BUILD)
+    o.define("build.step", STEP)
+    base = {"user": "ana", "status": "ok", "duration": 1, "tags": [], "stdout": "", "error": None}
+    o.write("build", {**base, "duration": 910})
+    o.write("build.step", {**base, "duration": 10, "step": "compile", "ok": "yes"})
+    o.write("build.step", {**base, "duration": 20, "step": "link", "ok": "no"})
+    o.write("build", {**base, "user": "joel", "status": "failed", "error": "link failed"})
+    o.write("build.step", {**base, "step": "retry", "ok": "yes"})
+
+
+def w_family_deep(o: Ops) -> None:
+    o.define("a", "{ x: num }\n")
+    o.write("a", {"x": 1})
+    o.write("a", {"x": 2})
+    o.define("a.b", "// A child.\n{ y: str }\n")
+    o.define("other", "{ z: str }\n")
+    o.write("a.b", {"x": 3, "y": "b1"})
+    o.write("other", {"z": "outside the family"})
+    o.write("a", {"x": 4})
+    o.define("a.b.c", "{ w: [] str }\n")
+    o.define("a.d", "{ d: |str? }\n")
+    seq = ["a.b.c", "a.b", "a.d", "a.b.c", "a", "a.d", "other", "a.b.c", "a.b", "a"]
+    for k, name in enumerate(seq):
+        v: dict[str, Any] = {"x": 5 + k}
+        if name.startswith("a.b"):
+            v["y"] = f"b{k}"
+        if name == "a.b.c":
+            v["w"] = [str(k)] * (k % 3)
+        if name == "a.d":
+            v["d"] = f"line {k}\n" if k % 2 else None
+        if name == "other":
+            v = {"z": str(k)}
+        o.write(name, v)
+
+
+def w_family_late_child(o: Ops) -> None:
+    o.define("job", "{ id: num }\n")
+    for i in range(1, 40):
+        o.write("job", {"id": i})
+    o.define("job.retry", "{ attempt: num }\n")
+    for i in range(40, 80):
+        if i % 3:
+            o.write("job", {"id": i})
+        else:
+            o.write("job.retry", {"id": i, "attempt": i // 3})
+
+
+def w_family_wide(o: Ops) -> None:
+    o.define("ev", "{ seq: num }\n")
+    for i in range(12):
+        o.define(f"ev.k{i:02d}", f"{{ k{i}: str? }}\n")
+    for i in range(600):
+        kind = (i * 7 + i // 13) % 13
+        name = "ev" if kind == 12 else f"ev.k{kind:02d}"
+        o.write(name, {"seq": i})
+
+
+def w_family_same_timestamps(o: Ops) -> None:
+    o.define("run", "{ i: num }\n")
+    o.define("run.part", "{ p: str }\n")
+    for i in range(6):
+        v = {"i": i, "p": str(i)} if i % 2 else {"i": i}
+        o.write("run.part" if i % 2 else "run", v, "20261107T000000.000Z")
+    o.write("run", {"i": 6}, "20261107T000000.001Z")
+
+
 WRITE = {
     "001-spec-example": w_spec_example,
     "002-magic-only": w_magic_only,
@@ -499,6 +596,11 @@ WRITE = {
     "023-same-timestamps": w_same_timestamps,
     "024-blocks-in-lists": w_blocks_in_lists,
     "025-top-level-annotation": w_top_level_annotation,
+    "026-family-basic": w_family_basic,
+    "027-family-deep": w_family_deep,
+    "028-family-late-child": w_family_late_child,
+    "029-family-wide": w_family_wide,
+    "030-family-same-timestamps": w_family_same_timestamps,
 }
 
 
@@ -593,6 +695,39 @@ def v_self_dir() -> bytes:
     return r.bytes()
 
 
+def v_dotted_name_in_1_0() -> bytes:
+    # In a 1.0 schema a dot is just a character: a.b is a type of its own.
+    r = Raw()
+    r.schema("a", "{ x: str }\n")
+    r.schema("a.b", "{ y: str }\n")
+    r.event("a.b", T1, [("y", b"alone", False)], [5])
+    r.event("a", T1, [("x", b"root", False)], [4])
+    return r.bytes()
+
+
+def v_family_later_extensions() -> bytes:
+    # Extensions after the family numbers are skipped.
+    r = Raw()
+    r.schema("p", "{ x: str }\n")
+    r.schema("p.c", "{ y: str }\n", version="1.1")
+    r.event("p", T1, [("x", b"1", False)], [1], ext=(77,))
+    r.event("p.c", T1, [("x", b"2", False), ("y", b"3", False)], [1, 1], ext=(5, 6))
+    r.event("p", T2, [("x", b"4", False)], [1])
+    return r.bytes()
+
+
+def v_child_of_unparseable_parent() -> bytes:
+    # The parent's schema is from a later minor and can't be parsed, so neither can the
+    # child's object; both still navigate, and the family still numbers its rows.
+    r = Raw(b"trak 1.4\n")
+    r.schema("p", '{ a: str = "x" }\n', version="1.4")
+    r.schema("p.c", "{ b: str }\n", version="1.1")
+    r.event("p", T1, [("a", b"1", False)], [1])
+    r.event("p.c", T1, [("a", b"2", False), ("b", b"3", False)], [1, 1])
+    r.event("p.c", T2, [("a", b"4", False), ("b", b"5", False)], [1, 1])
+    return r.bytes()
+
+
 VALID_RAW = {
     "101-torn-tail": v_torn_tail,
     "102-torn-tail-partial-footer": v_torn_tail_partial_footer,
@@ -602,6 +737,9 @@ VALID_RAW = {
     "106-unparseable-newer-schema": v_unparseable_newer_schema,
     "107-other-dir-policy": v_other_dir_policy,
     "108-self-dir": v_self_dir,
+    "109-dotted-name-in-1-0": v_dotted_name_in_1_0,
+    "110-family-later-extensions": v_family_later_extensions,
+    "111-child-of-unparseable-parent": v_child_of_unparseable_parent,
 }
 
 
@@ -780,6 +918,46 @@ def i_schema_syntax() -> tuple[bytes, str]:
     return with_trailer(r), "1.0 schema doesn't parse"
 
 
+def i_wrong_family_number() -> tuple[bytes, str]:
+    r = Raw()
+    r.schema("p", "{ }\n")
+    r.schema("p.c", "{ }\n", version="1.1")
+    r.event("p", T1, [], [])
+    r.event("p.c", T1, [], [], family=(3,))
+    return with_trailer(r), "p.c 1 is row 2 of family p, but says 3"
+
+
+def i_missing_family_number() -> tuple[bytes, str]:
+    r = Raw()
+    r.schema("p", "{ }\n")
+    r.schema("p.c", "{ }\n", version="1.1")
+    r.event("p.c", T1, [], [], family=())
+    return with_trailer(r), "p.c event has no number in family p"
+
+
+def i_child_before_parent() -> tuple[bytes, str]:
+    r = Raw()
+    r.schema("p.c", "{ }\n", version="1.1")
+    r.schema("p", "{ }\n")
+    return with_trailer(r), "1.1 schema p.c comes before its parent p"
+
+
+def i_child_repeats_parent_key() -> tuple[bytes, str]:
+    r = Raw()
+    r.schema("p", "{ a: str }\n")
+    r.schema("p.c", "{ a: str }\n", version="1.1")
+    return with_trailer(r), "p.c repeats p's key a"
+
+
+def i_family_timestamp_backwards() -> tuple[bytes, str]:
+    r = Raw()
+    r.schema("p", "{ }\n")
+    r.schema("p.c", "{ }\n", version="1.1")
+    r.event("p", T2, [], [])
+    r.event("p.c", T1, [], [])
+    return with_trailer(r), "p.c 1 is earlier than the family's previous row"
+
+
 INVALID = {
     "001-bad-magic": i_bad_magic,
     "002-unknown-major": i_unknown_major,
@@ -799,6 +977,11 @@ INVALID = {
     "016-schema-index-gap": i_schema_index_gap,
     "017-bad-timestamp": i_bad_timestamp,
     "018-schema-syntax": i_schema_syntax,
+    "019-wrong-family-number": i_wrong_family_number,
+    "020-missing-family-number": i_missing_family_number,
+    "021-child-before-parent": i_child_before_parent,
+    "022-child-repeats-parent-key": i_child_repeats_parent_key,
+    "023-family-timestamp-backwards": i_family_timestamp_backwards,
 }
 
 
@@ -824,6 +1007,7 @@ def expect(path: pathlib.Path) -> dict[str, Any]:
                     "name": s.name,
                     "index": s.index,
                     "version": s.version,
+                    "parent": s.parent,
                     "description": s.description,
                     "parsed": s.root is not None,
                     "annotations": [{"name": a.name, "text": a.text} for a in s.annotations],
@@ -851,6 +1035,7 @@ def expect(path: pathlib.Path) -> dict[str, Any]:
                     "type": e.type,
                     "n": e.n,
                     "timestamp": e.timestamp,
+                    "families": {a: e.family_number(a) for a in e.schema.lineage},
                     "value": native(e.to_native()) if e.schema.root is not None else None,
                 }
             )

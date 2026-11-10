@@ -45,7 +45,7 @@ def test_schema_text_gets_final_lf(tmp_path: pathlib.Path) -> None:
 
 def test_reader_on_spec_example(example: pathlib.Path) -> None:
     with trak.open(example) as r:
-        assert r.version == "1.0"
+        assert r.version == "1.1"
         assert [(s.name, s.index, s.version) for s in r.types()] == [
             ("build", 1, "1.0"),
             ("deploy", 2, "1.0"),
@@ -243,8 +243,8 @@ def test_dataclass_values(tmp_path: pathlib.Path) -> None:
     p = tmp_path / "d.trak"
     with trak.create(p) as w:
         w.define("build", "{ user: str, duration: num, error: str? }")
-        assert w.write("build", Build("ana", 3)) == 1
-        assert w.write("build", Build("bo", 4, "x")) == 2
+        assert w.write("build", Build("ana", 3)).n == 1
+        assert w.write("build", Build("bo", 4, "x")).n == 2
     with trak.open(p) as r:
         assert r.table("build").get(2).to_native() == {"user": "bo", "duration": "4", "error": "x"}
 
@@ -290,7 +290,7 @@ def test_value_errors(tmp_path: pathlib.Path, value: Any, message: str) -> None:
         w.define("t", "{ x: num, e: enum(a, b)?, s: str?, l: [] str?, m: {} str?, o: {y: str}? }")
         with pytest.raises(trak.ValueError, match=message):
             w.write("t", value)
-        assert w.write("t", {"x": 1}) == 1
+        assert w.write("t", {"x": 1}).n == 1
 
 
 # --- timestamps -----------------------------------------------------------------
@@ -415,7 +415,7 @@ def test_append_many(tmp_path: pathlib.Path) -> None:
 def test_append_to_magic_only_and_empty(tmp_path: pathlib.Path) -> None:
     p = tmp_path / "x.trak"
     trak.create(p).close()
-    assert p.read_bytes() == b"trak 1.0\n"
+    assert p.read_bytes() == b"trak 1.1\n"
     with trak.open_append(p) as w:
         w.define("a", "{}")
     q = tmp_path / "empty.trak"
