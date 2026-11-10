@@ -7,7 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/buk/trak/go"
+	"github.com/desx/trak/go"
 )
 
 func annotations(as []trak.Annotation) []any {

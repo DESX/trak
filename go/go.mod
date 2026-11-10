@@ -1,3 +1,3 @@
-module github.com/buk/trak/go
+module github.com/desx/trak/go
 
 go 1.22

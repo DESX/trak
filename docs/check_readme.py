@@ -4,7 +4,7 @@ Every fenced block preceded by `<!-- readme-test: LANG -->` is extracted and run
 in one scratch directory, in README order:
 
 - python: run with this interpreter (the package must be installed or on PYTHONPATH)
-- go: built as a module that replaces github.com/buk/trak/go with ../go
+- go: built as a module that replaces github.com/desx/trak/go with ../go
 - cpp: compiled against cpp/ (built with CMake into the scratch directory)
 - cli: each command run with the trak CLI built from go/cmd/trak; `tail -f`
   runs as plain `tail` so it ends
@@ -64,8 +64,8 @@ def main() -> None:
                 g.mkdir()
                 (g / "main.go").write_text(code, encoding="utf-8")
                 (g / "go.mod").write_text(
-                    "module quickstart\n\ngo 1.22\n\nrequire github.com/buk/trak/go v0.0.0\n\n"
-                    f"replace github.com/buk/trak/go => {(ROOT / 'go').as_posix()}\n",
+                    "module quickstart\n\ngo 1.22\n\nrequire github.com/desx/trak/go v0.0.0\n\n"
+                    f"replace github.com/desx/trak/go => {(ROOT / 'go').as_posix()}\n",
                     encoding="utf-8",
                 )
                 out = run(["go", "run", "."], g)

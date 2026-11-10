@@ -12,7 +12,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/buk/trak/go"
+	"github.com/desx/trak/go"
 )
 
 const base = 1_794_000_000_000 // 2026-11-06, in ms

@@ -21,7 +21,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/buk/trak/go"
+	"github.com/desx/trak/go"
 )
 
 const usage = `usage:

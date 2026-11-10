@@ -10,8 +10,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/buk/trak/go"
-	"github.com/buk/trak/go/internal/vectors"
+	"github.com/desx/trak/go"
+	"github.com/desx/trak/go/internal/vectors"
 )
 
 func main() {

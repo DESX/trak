@@ -67,7 +67,7 @@ with trak.open("builds.trak") as r:
 ## Go
 
 ```sh
-go get github.com/buk/trak/go
+go get github.com/desx/trak/go
 ```
 
 <!-- readme-test: go -->
@@ -78,7 +78,7 @@ import (
 	"fmt"
 	"log"
 
-	trak "github.com/buk/trak/go"
+	trak "github.com/desx/trak/go"
 )
 
 func main() {
@@ -109,7 +109,7 @@ C++17, CMake 3.20 or later, no dependencies. Add it with FetchContent and link
 `trak::trak`:
 
 ```cmake
-FetchContent_Declare(trak GIT_REPOSITORY https://github.com/buk/trak GIT_TAG v1.0.0 SOURCE_SUBDIR cpp)
+FetchContent_Declare(trak GIT_REPOSITORY https://github.com/desx/trak GIT_TAG v1.0.0 SOURCE_SUBDIR cpp)
 FetchContent_MakeAvailable(trak)
 target_link_libraries(app PRIVATE trak::trak)
 ```
@@ -136,7 +136,7 @@ int main() {
 The `trak` command is part of the Go module:
 
 ```sh
-go install github.com/buk/trak/go/cmd/trak@latest
+go install github.com/desx/trak/go/cmd/trak@latest
 ```
 
 <!-- readme-test: cli -->

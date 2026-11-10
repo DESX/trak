@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/buk/trak/go"
+	"github.com/desx/trak/go"
 )
 
 const example = "../../../conformance/valid/001-spec-example.trak"

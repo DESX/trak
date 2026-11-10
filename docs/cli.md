@@ -3,11 +3,11 @@
 `trak` inspects trak files. It is part of the Go module:
 
 ```sh
-go install github.com/buk/trak/go/cmd/trak@latest
+go install github.com/desx/trak/go/cmd/trak@latest
 ```
 
 Release builds for Linux, macOS and Windows are attached to each
-[GitHub release](https://github.com/buk/trak/releases).
+[GitHub release](https://github.com/desx/trak/releases).
 
 | Command | Does |
 |---|---|

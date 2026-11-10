@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/buk/trak/go"
-	"github.com/buk/trak/go/internal/vectors"
+	"github.com/desx/trak/go"
+	"github.com/desx/trak/go/internal/vectors"
 )
 
 func mustV[T any](v T, err error) T {

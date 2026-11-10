@@ -20,7 +20,7 @@ classifiers = [
 dev = ["pytest", "pytest-cov", "hypothesis", "mypy", "ruff"]
 
 [project.urls]
-Homepage = "https://github.com/buk/trak"
+Homepage = "https://github.com/desx/trak"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/trak"]

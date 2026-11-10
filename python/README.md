@@ -1,6 +1,6 @@
 # trak-log
 
-The Python library for [trak](https://github.com/buk/trak), a log format that
+The Python library for [trak](https://github.com/desx/trak), a log format that
 programs write and read, and people can read too.
 
 ```sh
@@ -22,5 +22,5 @@ with trak.open("builds.trak") as r:
 The library has no dependencies and needs Python 3.10 or later.
 
 The format is specified in
-[SPEC.md](https://github.com/buk/trak/blob/main/SPEC.md), and the API is
-documented in [docs/api.md](https://github.com/buk/trak/blob/main/docs/api.md).
+[SPEC.md](https://github.com/desx/trak/blob/main/SPEC.md), and the API is
+documented in [docs/api.md](https://github.com/desx/trak/blob/main/docs/api.md).

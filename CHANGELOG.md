@@ -24,7 +24,7 @@ The first release.
   - D6: `{}` as an empty object or the map prefix
 - **Python library** `trak-log` (import `trak`), Python 3.10 or later, with no
   dependencies. It includes a reader, writer and `check`.
-- **Go library** `github.com/buk/trak/go`, Go 1.22 or later, with no
+- **Go library** `github.com/desx/trak/go`, Go 1.22 or later, with no
   dependencies outside the standard library. It includes a reader, writer and
   `check`, plus native fuzz targets.
 - **C++17 library**, the CMake target `trak::trak`, with no dependencies. It
@@ -38,5 +38,5 @@ The first release.
 - **Navigation bound tests** on 1M-event files, and benchmarks in
   [bench/](bench).
 
-[Unreleased]: https://github.com/buk/trak/compare/v1.0.0...HEAD
-[1.0.0]: https://github.com/buk/trak/releases/tag/v1.0.0
+[Unreleased]: https://github.com/desx/trak/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/desx/trak/releases/tag/v1.0.0
