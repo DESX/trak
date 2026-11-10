@@ -4,7 +4,8 @@ Spec clarifications, and choices the spec leaves to the reference
 implementations.
 
 Each entry records the question, the answer and where it was applied.
-Changes made before the 1.0.0 release are folded into 1.0.0.
+1.0.0 was never released. Changes made before the 1.1.0 release are folded
+into 1.1.0.
 
 ## Spec clarifications
 
@@ -72,6 +73,30 @@ something that starts a type (`|`, `{`, `[` or a word) is the map prefix.
 Otherwise it's an empty object, which has no leaves and no VLQs.
 
 **Applied.** SPEC.md §5 (Types).
+
+### D7. Event families (MINOR, trak 1.1)
+
+**Question.** Related event types, such as a build and its steps, are separate
+chains. Nothing orders them against each other, and there is no table for the
+whole group.
+
+**Answer.** Joel's design, 2026-11-10:
+
+- A type named `P.x` in a schema declaring `1.1` is a child of `P`. It lists
+  only its own members; its object is `P`'s members followed by them.
+- An event's extensions hold its position in each enclosing family, root
+  first, one number per level. The number in the event's own family is
+  written only once the type has a child, and is `n` otherwise.
+- Any key that never decreases along a chain can be found by a jump walk in
+  O(log n). Row `m` of a family is then a seek in each of its `k` types, so
+  O(k log n), and a family's row count is its largest number.
+- Timestamps never decrease within a family.
+
+Files without children are byte-for-byte the same as in 1.0, apart from the
+magic line. 1.0 was never released, so no 1.0 reader has to read 1.1 files.
+
+**Applied.** SPEC.md §1, §5 (Schema objects), §6 (Family numbers), §7, §10
+and §12. The magic line is now `trak 1.1`.
 
 ## Implementation choices
 

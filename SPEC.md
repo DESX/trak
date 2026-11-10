@@ -1,4 +1,4 @@
-# trak 1.0
+# trak 1.1
 
 **trak is a log format that programs write and read, and people can read too.** A person can scroll, scan and grep a trak file. A program can reach any event, row or field in a few reads, and never mistakes content for structure.
 
@@ -13,8 +13,9 @@
 ## 1. Model
 
 - A file holds **schemas** and **events**. Each event has a **type**, and each type has exactly one schema per file.
-- Order is meaningful only within a type. Events of different types may interleave, and no relation between them is implied.
-- Within a type, timestamps never decrease.
+- Order is meaningful only within a type or a family. Otherwise events of different types may interleave, and no relation between them is implied.
+- A **family** is a type and all of its descendants: `build.step` is a child of `build`, and `build.step.compile` a child of `build.step`. A child has its parent's fields, then its own. The family of `build` holds the events of all three types, in file order, and is a table of its own.
+- Within a family, timestamps never decrease. A type with no children is a family of one.
 
 ## 2. Versions
 
@@ -31,7 +32,7 @@ The magic line carries the writer's `MAJOR.MINOR`. Each schema footer carries th
 ## 3. File layout
 
 ```
-trak 1.0     magic line
+trak 1.1     magic line
 <objects>    schemas and events
 ```
 
@@ -90,7 +91,7 @@ A pointer stores `(this object's start − target object's end) + 1`. `0` means 
 - `{}` followed by a type is the map prefix. Otherwise it is an empty object, which has no leaves.
 - `str`, `num` and `enum` are **leaves**. Writers validate `num` and `enum` values. Readers may.
 - An event's top-level type is an object. Keys and enum words match `[A-Za-z_][A-Za-z0-9_]*`. Trailing commas are allowed.
-- An **annotation** name matches `[A-Za-z_][A-Za-z0-9_.-]*`, and its text contains no `)` or LF. trak passes annotations to applications unchanged, and trak 1.0 defines none. A name defined by a later minor version has that meaning only in schemas that declare that version or later.
+- An **annotation** name matches `[A-Za-z_][A-Za-z0-9_.-]*`, and its text contains no `)` or LF. trak passes annotations to applications unchanged, and trak 1.1 defines none. A name defined by a later minor version has that meaning only in schemas that declare that version or later.
 - `//` starts a comment. A comment ending a field's line is that field's **description**. Comment lines before the opening `{` are the type's description. APIs expose both.
 
 ### Schema objects
@@ -111,10 +112,12 @@ A schema's body is its definition, ending with LF. Its footer:
 |---|---|---|
 | 1 | body length | bytes from schema start to footer start |
 | 2 | previous schema | pointer to the preceding schema, `0` for the first |
-| 3 | extension count `E` | `0` in trak 1.0 |
+| 3 | extension count `E` | `0` in trak 1.1 |
 | 4… | extensions | `E` VLQs |
 
 - A type's schema appears anywhere before its first event.
+- A schema declaring `1.1` or later whose name is `P.x` is a **child** of type `P`, whose schema must appear earlier. Its definition lists only its own members, and its top-level object is `P`'s members followed by them. A member key that `P` already has is an error. A child's description and top-level annotations are its own.
+- In a schema declaring `1.0`, a `.` in a name is just a character.
 - The schema is node 0 of its type's chain. Events are nodes 1, 2, …
 - Schemas link through *previous schema*. Type index 0 refers to this chain.
 
@@ -151,7 +154,7 @@ Leaves are written in schema order, depth first.
 | 3 | jump | pointer to node `J(n)` of this type (§7) |
 | 4 | dir pointer | pointer to the latest node of type `dir type` |
 | 5 | dir type | type index, 0 for the schema chain |
-| 6 | extension count `E` | `0` in trak 1.0 |
+| 6 | extension count `E` | the event's family numbers (below), then any later extensions |
 | 7… | extensions, then values | `E` VLQs, then the values below in schema order, depth first |
 
 | Shape | VLQs |
@@ -161,6 +164,20 @@ Leaves are written in schema order, depth first.
 | object | each member's VLQs in order |
 | `[] T` | count, then each element's VLQs |
 | `{} T` | count, then per entry: key byte length, value's VLQs |
+
+### Family numbers
+
+An event's **family number** in family `A` is its 1-based position among the events of `A`, in file order. The extensions of an event of type `T` are its family numbers in each of `T`'s ancestors, root first, then in `T` itself if `T` has a child whose schema appears before this event. Otherwise the number in `T`'s own family is its `n` and isn't written.
+
+| Event | `E` | Extensions |
+|---|---|---|
+| `deploy` (no children) | 0 | none |
+| `build`, before any child is defined | 0 | none (its number is `n`) |
+| `build`, after `build.step` is defined | 1 | number in `build` |
+| `build.step` | 1 or 2 | number in `build`, then in `build.step` if it has a child |
+| `build.step.compile` | 2 | numbers in `build` and `build.step` |
+
+Along any type's chain, its numbers in each family strictly increase.
 
 ## 7. Navigation
 
@@ -174,8 +191,13 @@ Leaves are written in schema order, depth first.
 | Latest event of T | walk back to an event of T, or one with dir type T | ≈ K events |
 | All schemas | dir type 0, then *previous schema* | ≈ 2K reads |
 | Row count of T | latest `n` | ≈ K reads |
+| Seek in T by a key that never decreases along the chain | the walk below | O(log n) |
+| Row count of family A | the largest number in A among its types' latest events | ≈ K reads |
+| Row `m` of family A | seek each of A's `k` types for number `m` in A | O(k log n) |
 
 **Jump.** `J(0) = 0`. For `n ≥ 1`, with `p = n − 1`: `J(n) = J(J(p))` if `p > J(p)` and `p − J(p) = J(p) − J(J(p))`, otherwise `J(n) = p`. To reach `m < n`, take the jump when its target is `≥ m`, otherwise the step.
+
+**Seek.** To find the first node of T whose key is `≥ m`, for a key that never decreases along the chain (offset, timestamp, a family number), walk down from the latest node; if its key is below `m`, there is none. Take the jump when the jump target's key is `≥ m`, else the step when the step target's key is `≥ m`, else stop. The schema's key is below every `m`. The path is the same as the walk to that node by `n`, plus one read per jump target not taken.
 
 **Directory.** The dir pointer targets the latest node of its type, which is the schema if the type has no events yet. Writers should pick the type covered longest ago, where an event covers its own type and its dir type. Readers must not depend on that policy.
 
@@ -195,14 +217,16 @@ Leaves are written in schema order, depth first.
 | schema with a newer minor | reads it using the rules below |
 | unknown leaf, `word` or `word(…)` | treats it as `str` |
 | unknown annotation | passes it through |
-| `E > 0` | skips the `E` extension VLQs |
+| more extensions than its family numbers | skips the rest |
 | schema it cannot parse | still navigates the type; its values are unavailable |
 
 ## 10. Writer rules
 
 - Write the magic line first.
 - Write each type's schema once, before its first event.
-- Keep timestamps non-decreasing within each type.
+- Keep timestamps non-decreasing within each family.
+- Write a child's schema after its parent's, and number each event in its families (§6).
+- Don't append to a file holding a schema whose version is newer than the writer's.
 - Validate `num` and `enum` values. Never inspect `str` values.
 - Reject a map with a repeated key.
 - Append each object with a single write.
@@ -220,16 +244,18 @@ A crash can leave an incomplete object at the end of a file. A reader uses the l
 | Column tooltips | field descriptions |
 | Row count | latest `n` |
 | Scroll to row `m` | step and jump, O(log n) |
+| Family tables | the family's rows in file order; columns are the family type's leaves, with each child's own leaves added |
+| Family row `m` | seek each type in the family, O(k log n) |
 | Visible rows | footer plus one contiguous read per row |
 | Block cells | collapsed, expanded on demand by slicing the file |
 | Lists and maps | expandable cells |
 | Sorting and formatting | by leaf type and known annotations |
-| Time scrubbing | binary search on per-type timestamps |
+| Time scrubbing | seek by timestamp, O(log n) per type |
 
 ## 13. Example
 
 ```
-trak 1.0
+trak 1.1
 // One CI build run.
 {
   user: str,                  // who triggered the build
