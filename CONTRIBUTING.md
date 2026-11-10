@@ -1,7 +1,7 @@
 # Contributing
 
-The spec ([SPEC.md](SPEC.md)) is normative. The three libraries implement it
-exactly, and their writers must produce identical bytes. Every change must keep
+The spec ([SPEC.md](SPEC.md)) is normative. The libraries implement it exactly,
+and the three writers (Python, Go, C++) must produce identical bytes. Every change must keep
 the conformance suite and the cross-implementation tests passing.
 
 ## Python
@@ -38,6 +38,19 @@ clang-tidy -p cpp/build cpp/src/*.cpp     # needs -DCMAKE_EXPORT_COMPILE_COMMAND
 The tests fetch GoogleTest and nlohmann/json with FetchContent. The library has
 no dependencies.
 
+## JavaScript and the viewer
+
+```sh
+cd js && npm test                         # unit tests and the conformance vectors
+cd viewer/test && npm ci && npx playwright install chromium && npm test
+cd go/cmd/trak && go generate             # after changing viewer/ or js/src
+```
+
+The viewer has no build step: `viewer/` is plain ES modules that import
+`js/src`. `go generate` copies both into the CLI, which embeds them for
+`trak serve`; CI fails if the copy is stale. The end-to-end tests build the CLI,
+write test data with Python, and drive the viewer in headless Chromium.
+
 ## Conformance vectors and cross-checks
 
 ```sh
@@ -46,7 +59,8 @@ cd go && go build -o interop ./internal/interop && cd ..
 cmake --build cpp/build --target trak_interop
 python conformance/crosscheck.py --seeds 200 \
   --impl python="python python/tests/interop.py" \
-  --impl go=go/interop --impl cpp=cpp/build/trak_interop
+  --impl go=go/interop --impl cpp=cpp/build/trak_interop \
+  --reader js="node js/tools/interop.js"
 python docs/check_readme.py               # run the README quickstarts
 ```
 
@@ -69,7 +83,7 @@ never changes bytes. A MINOR change adds bytes that older readers can skip.
 1. Move the `Unreleased` notes in CHANGELOG.md under the new version, with the
    date.
 2. Set the version in `python/pyproject.toml`, `python/src/trak/__init__.py`,
-   `cpp/CMakeLists.txt` and `cpp/src/core.cpp`.
+   `cpp/CMakeLists.txt`, `cpp/src/core.cpp` and `js/package.json`.
 3. Tag `vX.Y.Z` and push the tag. The release workflow:
    - creates the matching `go/vX.Y.Z` tag that Go needs for the `go/` module
    - publishes `trak-log` to PyPI

@@ -100,8 +100,8 @@ and §12. The magic line is now `trak 1.1`.
 
 ## Implementation choices
 
-These choices are left to implementations by the spec. All three reference
-libraries make them the same way. They change no bytes, so Joel can revisit
+These choices are left to implementations by the spec. The reference libraries
+make them the same way. They change no bytes, so Joel can revisit
 any of them without a spec change.
 
 | # | Topic | Choice |
@@ -109,11 +109,18 @@ any of them without a spec change.
 | I1 | Field paths in schema APIs | List indexes are written `[]` and map keys `{}`, e.g. `jobs.[].env.{}`. |
 | I2 | A leaf's description and annotations | A description that is empty after stripping `//` and whitespace counts as no description. Leaf descriptions and annotations come from the leaf's own field (the nearest enclosing object member). Annotations on the types between that member and the leaf are listed outermost first. Annotations on the top-level object are exposed on the schema. |
 | I3 | A leaf's `optional` flag | True when any type from the root down to the leaf is optional, i.e. the column can be empty. |
-| I4 | Unknown leaves when writing | `define` rejects them, because a 1.0 writer declares `1.0` in the schema footer. Readers accept them as `str` (§9). |
-| I5 | Schema versions | A schema footer whose major isn't 1 makes that schema unparseable: the type still navigates, but its values are unavailable. `check` parses a `1.0` schema strictly and a newer minor leniently. |
+| I4 | Unknown leaves when writing | `define` rejects them: a writer only writes the versions it knows. Readers accept them as `str` (§9). |
+| I5 | Schema versions | A schema footer whose major isn't 1 makes that schema unparseable: the type still navigates, but its values are unavailable. `check` parses `1.0` and `1.1` schemas strictly and a newer minor leniently, and a child of an unparseable parent leniently. |
 | I6 | `check` and torn tails | A torn tail is accepted only if it has no complete footer line. If the bytes ignored by recovery hold a complete but invalid footer line, `check` fails and reports why that footer is invalid. Without this, a corrupt last object would pass as a torn tail. |
 | I7 | `Event.get(path)` with colliding paths | Map keys may contain `.`, so two leaves can share a path. The first one in file order wins. `to_native()` is always unambiguous. |
 | I8 | `flush()` | Writers make one unbuffered `write` per object, so `flush()` calls fsync. |
 | I9 | Schema text | `define` writes the definition exactly as given and adds a final LF if it's missing. |
 | I10 | Python VLQ test range | The 0 to 10⁷ round trip runs in Python when `TRAK_SLOW=1`. Otherwise it runs to 10⁶. Go and C++ always cover 10⁷. |
 | I11 | Lists of empty objects | A list whose element type writes nothing (a required empty object) costs no bytes per element, so a tiny file could claim billions. Readers refuse to decode one with more than 65,536 elements, as a format error. |
+| I12 | Versions written | The magic line is always `trak 1.1`. A schema footer declares `1.1` only for a child type, and `1.0` otherwise, the oldest version its definition needs. |
+| I13 | Dotted names when writing | `define("a.b", …)` fails unless `a` is defined: a writer never writes a dotted name that isn't a child, so a `.` in a name it writes always means a family. Readers still accept dots in `1.0` schemas as plain characters (§5). |
+| I14 | Write positions | `write` returns `(n, offset)`, the offset being where the event's object starts. It is the same as `Event.offset` and is a reader cursor. |
+| I15 | Cursors | `before(c, k)` returns events starting before `c`, newest first; `after(c, k)` those starting after `c`, oldest first. A cursor is valid if it is the magic line's end, the reader's end, or the end of an object that passes the recovery test (§11). `after` seeks each type by offset (§7, Seek) and walks back from the earliest end of any type's `k`-th event after `c`. |
+| I16 | Directory sync | With `sync`, `create` fsyncs the file's directory after writing the magic line, so the new file survives a crash. It does nothing on Windows. |
+| I17 | Large VLQs in JavaScript | The JavaScript reader rejects a VLQ above 2^53 as a format error, since a JavaScript number can't hold it exactly. No real file has lengths or offsets that large. |
+| I18 | Extensions after the family numbers | Readers and `check` skip them (§9). `check` requires the family numbers themselves to be exact. |

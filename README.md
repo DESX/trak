@@ -9,7 +9,7 @@ boundary comes from lengths in footers. Values are copied as they are, never
 escaped, so a multi-line compiler log costs nothing extra.
 
 ```
-trak 1.0
+trak 1.1
 // One CI build run.
 {
   user: str,                  // who triggered the build
@@ -31,9 +31,14 @@ The lines starting `##[` and `==[` are footers. They close a schema and an event
 and their trailing letters are lengths and pointers. The format is specified in
 [SPEC.md](SPEC.md).
 
-This repository holds the spec and reference libraries in Python, Go and C++. All
-three pass the same [conformance suite](conformance), and their writers produce
-identical bytes.
+Related types form a **family**: `build.step` is a child of `build`, inherits its
+fields, and adds its own. Each event records its row in every family it belongs
+to, so a family is one table in one guaranteed order, and any row is a few seeks
+away.
+
+This repository holds the spec, reference libraries in Python, Go and C++, a
+JavaScript reader, and a web viewer. All four libraries pass the same
+[conformance suite](conformance), and the three writers produce identical bytes.
 
 ## Python
 
@@ -109,7 +114,7 @@ C++17, CMake 3.20 or later, no dependencies. Add it with FetchContent and link
 `trak::trak`:
 
 ```cmake
-FetchContent_Declare(trak GIT_REPOSITORY https://github.com/desx/trak GIT_TAG v1.0.0 SOURCE_SUBDIR cpp)
+FetchContent_Declare(trak GIT_REPOSITORY https://github.com/desx/trak GIT_TAG v1.1.0 SOURCE_SUBDIR cpp)
 FetchContent_MakeAvailable(trak)
 target_link_libraries(app PRIVATE trak::trak)
 ```
@@ -129,6 +134,20 @@ int main() {
   auto builds = r.table("build");
   std::cout << builds.count() << " build by " << *builds.get(1).get("user") << "\n";  // 1 build by ana
 }
+```
+
+## JavaScript
+
+A reader for browsers and Node.js, with no dependencies. It reads through byte
+sources: a dropped `File`, HTTP Range requests, or bytes in memory. See
+[js/README.md](js/README.md).
+
+```js
+import { Reader, HttpSource } from "./js/src/index.js";
+
+const r = await Reader.open(await HttpSource.open("/files/builds.trak"));
+const latest = await r.table("build").latest();
+console.log(await latest.get("user"));
 ```
 
 ## Command line
@@ -157,6 +176,19 @@ N  TIMESTAMP             user  status  duration  stdout
 2  20261107T140322.415Z  joel  failed  1520      ▸ 1 line
 ```
 
+## Viewer
+
+```sh
+trak serve ~/logs                         # then open http://127.0.0.1:8765/
+```
+
+`trak serve DIR` serves a web viewer for the `.trak` files under `DIR`. It reads
+only the byte ranges it shows, so a multi-GB file over a remote connection opens
+in a few reads. It shows the file as a log in file order, or any type or family
+as a table: nested objects get grouped headers, and blocks, lists and maps expand
+on demand. You can also drop a file on the page, which reads it in the browser.
+The table is a widget other pages can embed; see [viewer/](viewer).
+
 ## Documentation
 
 | Document | Contents |
@@ -165,6 +197,7 @@ N  TIMESTAMP             user  status  duration  stdout
 | [docs/api.md](docs/api.md) | The shared library API, with notes for each language |
 | [docs/cli.md](docs/cli.md) | The `trak` command |
 | [docs/DECISIONS.md](docs/DECISIONS.md) | Spec clarifications and implementation choices |
+| [js/README.md](js/README.md) | The JavaScript reader |
 | [conformance/](conformance) | Test vectors every implementation must pass |
 | [bench/](bench) | Benchmarks |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Building and testing each library |

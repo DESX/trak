@@ -19,7 +19,7 @@ Every write vector's `.trak` is also a valid vector with the same name.
 {
 "types": [
   {
-    "name": "build", "index": 1, "version": "1.0",
+    "name": "build", "index": 1, "version": "1.0", "parent": null,
     "description": "One CI build run.",
     "parsed": true,
     "annotations": [],
@@ -34,18 +34,25 @@ Every write vector's `.trak` is also a valid vector with the same name.
   }
 ],
 "events": [
-{"type": "build", "n": 1, "timestamp": "20261107T140210.120Z", "value": {"user": "ana", "error": null}}
+{"type": "build", "n": 1, "timestamp": "20261107T140210.120Z", "families": {"build": 1}, "value": {"user": "ana", "error": null}}
 ]
 }
 ```
 
 - `types` are in index order. `parsed` is false when a reader can't parse the definition
   (SPEC §9). The type still navigates, its `fields` are empty, and its events' `value` is `null`.
+- `parent` is a child type's parent (SPEC §5), or `null`. A child's `fields` start with its
+  parent's.
 - `annotations` on a type are those on its top-level object.
 - Field `path`s write list indexes as `[]` and map keys as `{}`. `type` is `str`, `num` or
   `enum`. An unknown leaf has type `str` and keeps its original text in `unknown`.
   `optional`, `annotations` and `description` follow docs/DECISIONS.md (I1–I3).
-- `events` are in file order. Leaf values are strings holding the raw bytes (every vector is
+- `events` are in file order. `families` maps each of the event's families, root first, to
+  its row number in that family (SPEC §6); for a type with no family it is just `n`.
+- An implementation should also check that its navigation agrees with the file-order scan:
+  every type's `get(n)` and every family's `get(m)` and full range, and paging through
+  every event with `after` and `before` (see `python/tests/interop.py`).
+- Leaf values are strings holding the raw bytes (every vector is
   UTF-8), and absent values are `null`. Objects are JSON objects. Lists are arrays. Maps are
   arrays of `[key, value]` pairs in file order, and a key is `null` when its entry has no
   leaves (D3).

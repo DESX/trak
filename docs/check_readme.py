@@ -47,7 +47,7 @@ def main() -> None:
         trak_cli = d / f"trak{EXE}"
         run(["go", "build", "-o", str(trak_cli), "./cmd/trak"], ROOT / "go")
 
-        example = readme[readme.index("```\ntrak 1.0") + 4 :]
+        example = readme[readme.index("```\ntrak 1.") + 4 :]
         (d / "example.trak").write_text(
             example[: example.index("```")], encoding="utf-8", newline=""
         )
