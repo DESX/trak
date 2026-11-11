@@ -150,8 +150,8 @@ def test_sync_create_syncs_directory(
     monkeypatch.setattr(os, "fsync", fsync)
     with trak.create(tmp_path / "s.trak", sync=True) as w:
         w.define("t", "{}")
-    # The magic line, the directory, then the schema.
-    assert len(synced) == 3
+    # The magic line, the directory (not on Windows), then the schema.
+    assert len(synced) == (2 if os.name == "nt" else 3)
     synced.clear()
     with trak.create(tmp_path / "n.trak") as w:
         w.define("t", "{}")
