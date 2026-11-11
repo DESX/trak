@@ -2,6 +2,7 @@
 // append. Mirrors python/tests/test_family.py.
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <random>

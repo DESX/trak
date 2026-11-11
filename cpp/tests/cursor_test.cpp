@@ -2,6 +2,7 @@
 // Mirrors python/tests/test_cursor.py.
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <random>
