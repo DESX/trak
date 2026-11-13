@@ -45,13 +45,15 @@ await p.press(`${view} .row-input`, "Enter");
 await p.waitForSelector(`${view} .row.hit[data-m="150000"]`);
 await shot("2-turn-150000");
 
-// Drag "reply" before "kind", then open the context group.
-const from = p.locator(`${view} .h >> text=reply`).first();
+// Drag "latency" before "kind", then open the context group.
+const from = p.locator(`${view} .h >> text=latency`).first();
 const to = p.locator(`${view} .h >> text=kind`).first();
 await from.dragTo(to);
 await p.waitForTimeout(200);
+await shot("3a-columns-reordered");
 await p.click(`${view} .h.group >> text=context`);
-await shot("3-columns-reordered");
+await p.$eval(`${view} .grid-wrap`, (el) => (el.scrollLeft = el.scrollWidth));
+await shot("3b-group-expanded");
 
 await p.click(`${view} .row.hit .c.expand >> nth=0`);
 await p.waitForSelector("dialog.detail[open] .detail-body");
@@ -59,15 +61,11 @@ await p.waitForFunction(() => !document.querySelector("dialog.detail[open] .deta
 await shot("4-block-expanded");
 await p.keyboard.press("Escape");
 
-// A path link: a session's setup points at the prompt version it uses.
-await p.evaluate(() => window.trakApp.navigate("table:sessions@0"));
-await p.waitForSelector(`${view} .row`);
-await p.click(`${view} .h.group >> text=setup`);
-await p.waitForTimeout(150);
-await p.click(`${view} .h.group >> text=prompts`);
+// A path link: each quota block names the turn that hit it.
+await p.evaluate(() => window.trakApp.navigate("table:quota@0"));
 await p.waitForSelector(`${view} a.path`);
 await shot("5a-path-links");
-await p.click(`${view} .row >> nth=3 >> a.path >> nth=0`);
+await p.click(`${view} a.path >> nth=0`);
 await p.waitForSelector(`${view} .line.focus`);
 await shot("5b-path-followed");
 
