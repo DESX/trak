@@ -1,0 +1,145 @@
+# Sophie: an agent harness for chat-only model APIs.
+root sophie {
+  version: str,                       # Sophie version that created the file
+  defaults: settings,                 # session defaults and their history
+  logins: event login,
+  quota: event quota,
+  sessions: event session,
+}
+
+# Session defaults. Each setting is an event list; its latest item is current.
+object settings {
+  backend: event enum(commercial, govcloud),
+  model: event str,
+  effort: event str,
+  workdir: event str,                 # directory new sessions run in
+  compact_at: event num,              # token count that triggers compaction
+  nanny: event enum(on, off),         # approve each script before it runs
+  retry_quota: event enum(on, off),   # wait out a quota block, then retry
+  watchdog: {                         # limits, seconds
+    w1: event num,
+    w2: event num,
+    w3: event num,
+    w4: event num,
+    check: event num,                 # hard limit on a watchdog turn's script
+  },
+  prompts: {
+    base: event |str,                 # opens every API session
+    watchdog: event |str,
+    timeout: event |str,
+    compaction: event |str,
+  },
+}
+
+# A login attempt. Keys, secrets and passwords are never logged.
+object login {
+  backend: enum(commercial, govcloud),
+  outcome: enum(ok, failed),
+  expires: num?,                      # end of the one-hour login, ms since epoch
+  error: str?,
+}
+
+# The 24-hour quota changed state.
+object quota {
+  backend: enum(commercial, govcloud),
+  state: enum(blocked, open),
+  seen_in: path?,                     # the turn that hit the block
+}
+
+# One Sophie session, spanning any number of API sessions.
+object session {
+  setup: setup,                       # fixed when the session is created
+  spawned_by: path?,                  # the turn of the agent that started it
+  name: event str,
+  nanny: event enum(on, off),
+  state: event enum(active, archived),
+  turns: event turn,
+  messages: event message,            # the chat window
+  compactions: event compaction,
+  results: event result,              # task-complete calls
+}
+
+# A session's setup, resolved from the defaults and the user's overrides.
+object setup {
+  backend: enum(commercial, govcloud),
+  model: str,
+  effort: str,
+  workdir: str,
+  compact_at: num,
+  retry_quota: enum(on, off),
+  watchdog: {                         # seconds
+    w1: num,
+    w2: num,
+    w3: num,
+    w4: num,
+    check: num,
+  },
+  prompts: {                          # the exact prompt versions used
+    base: path,                       # e.g. defaults.prompts.base.3
+    watchdog: path,
+    timeout: path,
+    compaction: path,
+  },
+}
+
+# Token usage of an API session.
+object context {
+  used: num,
+  limit: num,
+}
+
+# One prompt and its reply, checked and ready to run.
+object turn {
+  kind: enum(user, auto, watchdog, timeout, resume),
+  api_session: str,
+  about: path?,                       # watchdog, timeout: the running turn; resume: the compaction
+  latency: num,                       # ms from send to reply
+  retries: num,                       # API retries before the reply
+  prompt: |str,                       # the full text sent
+  reply: |str,                        # the bash script
+  context: context,                   # after the reply
+  check: enum(ok, syntax, no_start),  # bash -n and the start call
+  check_error: |str?,
+  launch: event launch,
+  exit: event exit,
+}
+
+# The script was approved or rejected, and started if approved.
+object launch {
+  approval: enum(auto, approved, edited, rejected),
+  edited: |str?,                      # the script as the user changed it
+  level: enum(w1, w2, w3, w4),
+  summary: str,                       # from sophie_start
+  pid: num?,
+}
+
+# The script ended.
+object exit {
+  reason: enum(done, killed, timeout),
+  code: num?,
+  stdout: |str,
+  stderr: |str,
+  duration: num,                      # ms
+}
+
+# A chat line, from the user or from sophie_chat.
+object message {
+  from: enum(user, agent),
+  text: |str,
+  turn: path?,                        # agent: the turn that sent it
+}
+
+# A handover to a new API session.
+object compaction {
+  from_session: str,
+  to_session: str,
+  at: context,
+  prompt: |str,
+  handover: |str,
+}
+
+# A sophie_done call.
+object result {
+  message: |str,
+  turn: path,
+}
