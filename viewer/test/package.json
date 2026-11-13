@@ -1,0 +1,7 @@
+{
+  "name": "trak-viewer-test",
+  "private": true,
+  "type": "module",
+  "scripts": { "test": "node --test e2e.test.js" },
+  "devDependencies": { "playwright": "1.62.1" }
+}

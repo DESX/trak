@@ -14,6 +14,7 @@ import (
 	"path"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -31,6 +32,7 @@ var uiFiles embed.FS
 //	/viewer/...           the viewer
 //	/js/src/...           the JavaScript reader
 //	/viewer/api/files     a JSON listing of one directory: ?dir=sub/dir
+//	/viewer/api/read      byte ranges of one file: ?path=P&r=off+len,off+len…
 //	/viewer/files/PATH    a .trak file, with HEAD and Range support
 type server struct {
 	root string // absolute, symlinks resolved
@@ -39,6 +41,15 @@ type server struct {
 }
 
 func newServer(root string) (*server, error) {
+	sub, err := fs.Sub(uiFiles, "ui")
+	if err != nil {
+		return nil, err
+	}
+	return newServerFS(root, sub)
+}
+
+// newServerFS serves the viewer from ui, which holds viewer/ and js/src/.
+func newServerFS(root string, ui fs.FS) (*server, error) {
 	abs, err := filepath.Abs(root)
 	if err != nil {
 		return nil, err
@@ -50,11 +61,7 @@ func newServer(root string) (*server, error) {
 	if st, err := os.Stat(real); err != nil || !st.IsDir() {
 		return nil, fmt.Errorf("%s is not a directory", root)
 	}
-	sub, err := fs.Sub(uiFiles, "ui")
-	if err != nil {
-		return nil, err
-	}
-	return &server{root: real, name: filepath.Base(real), ui: http.FileServer(http.FS(sub))}, nil
+	return &server{root: real, name: filepath.Base(real), ui: http.FileServer(http.FS(ui))}, nil
 }
 
 func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -73,6 +80,8 @@ func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusFound)
 	case p == "/viewer/api/files":
 		s.list(w, r)
+	case p == "/viewer/api/read":
+		s.read(w, r)
 	case strings.HasPrefix(p, "/viewer/files/"):
 		s.file(w, r, strings.TrimPrefix(p, "/viewer/files/"))
 	case strings.HasPrefix(p, "/viewer/") || strings.HasPrefix(p, "/js/src/"):
@@ -184,6 +193,72 @@ func (s *server) file(w http.ResponseWriter, r *http.Request, rel string) {
 	http.ServeContent(w, r, "", time.Time{}, io.NewSectionReader(f, 0, info.Size()))
 }
 
+// maxRead bounds one read request: ranges and bytes.
+const (
+	maxRanges    = 256
+	maxReadBytes = 64 << 20
+)
+
+// read answers with the requested ranges of one file, concatenated, and the
+// file's size in X-Trak-Size. With no ranges it sends only the size.
+func (s *server) read(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	real, err := s.resolve(q.Get("path"))
+	if err != nil || !strings.HasSuffix(real, ".trak") {
+		http.NotFound(w, r)
+		return
+	}
+	f, err := os.Open(real)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil || !info.Mode().IsRegular() {
+		http.NotFound(w, r)
+		return
+	}
+	size := info.Size()
+	type span struct{ off, n int64 }
+	var spans []span
+	var total int64
+	if rs := q.Get("r"); rs != "" {
+		for _, part := range strings.Split(rs, ",") {
+			a, b, ok := strings.Cut(part, " ")
+			if !ok {
+				a, b, ok = strings.Cut(part, "+")
+			}
+			off, err1 := strconv.ParseInt(a, 10, 64)
+			n, err2 := strconv.ParseInt(b, 10, 64)
+			if !ok || err1 != nil || err2 != nil || off < 0 || n < 0 || off+n > size {
+				http.Error(w, "bad range "+part, http.StatusRequestedRangeNotSatisfiable)
+				return
+			}
+			spans = append(spans, span{off, n})
+			total += n
+		}
+	}
+	if len(spans) > maxRanges || total > maxReadBytes {
+		http.Error(w, "too many ranges or bytes", http.StatusRequestEntityTooLarge)
+		return
+	}
+	h := w.Header()
+	h.Set("Content-Type", "application/octet-stream")
+	h.Set("Cache-Control", "no-store")
+	h.Set("X-Trak-Size", strconv.FormatInt(size, 10))
+	h.Set("Content-Length", strconv.FormatInt(total, 10))
+	if r.Method == http.MethodHead {
+		return
+	}
+	buf := make([]byte, 64<<10)
+	for _, sp := range spans {
+		if _, err := io.CopyBuffer(w, io.NewSectionReader(f, sp.off, sp.n), buf); err != nil {
+			return
+		}
+	}
+}
+
 // serve runs the viewer until stop is closed (tests) or forever.
 func serve(out io.Writer, a args, stop <-chan struct{}) error {
 	addr := a.flags["addr"]
@@ -194,7 +269,13 @@ func serve(out io.Writer, a args, stop <-chan struct{}) error {
 	if prefix != "" && !strings.HasPrefix(prefix, "/") {
 		return fmt.Errorf("%w: --prefix must start with /", errUsage)
 	}
-	s, err := newServer(a.pos[0])
+	var s *server
+	var err error
+	if dev := a.flags["dev"]; dev != "" {
+		s, err = newServerFS(a.pos[0], os.DirFS(dev)) // the repo, for working on the viewer
+	} else {
+		s, err = newServer(a.pos[0])
+	}
 	if err != nil {
 		return err
 	}
