@@ -71,7 +71,7 @@ Lines end with LF. Lengths and offsets are in bytes.
 | `--[ path ]--` | Block start, inside a body |
 | `--[ /path ]--` | Block end, inside a body |
 
-**Schema.** The header line is `##[ schema ]##` followed by VLQs: the schema text's length, then an extension count E and E VLQs. The schema text follows it and ends with LF. It is the only schema: a file's schema never changes.
+**Schema.** The header line is `##[ schema ]##` followed by VLQs: the schema text's length, the root append's length (version 1, body and footer), then an extension count E and E VLQs. The schema text follows it and ends with LF, and the root append follows that, so a reader finds the root's leaves in one read. It is the only schema: a file's schema never changes.
 
 **Append.** A body, then a footer line. The body holds the item's leaves, in schema order, depth first:
 

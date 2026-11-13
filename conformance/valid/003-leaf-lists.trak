@@ -1,0 +1,41 @@
+trak 1.2
+##[ schema ]##gHcVA
+# Lists of leaves.
+root leaves {
+  title: str,
+  words: event str,
+  notes: event |str,
+  counts: event num,
+  states: event enum(a, b, c),
+  links: event path,
+}
+title: leaves
+==[ leaves 1 20261113T090000.000Z ]==OAAGAFAAAAAAAAAAAAAAA
+words: hello
+==[ words.0 2 20261113T090001.000Z ]==NBAFAFBACAAAAAAAAAAAAABAD
+words: 
+==[ words.1 3 20261113T090002.000Z ]==IAAAAFCACAAAAAAAAAAAAACBDAD
+--[ notes ]--
+line one
+line two
+
+--[ /notes ]--
+==[ notes.0 4 20261113T090003.000Z ]==bWBASAFCBCBACAAAAAAAAAABAD
+--[ notes ]--
+--[ notes ]--
+==[ fake 9 20261113T090000.000Z ]==AAA
+--[ /notes ]--
+--[ /notes ]--
+==[ notes.1 5 20261113T090004.000Z ]==dTBAcPAFCeKCCACAAAAAAAAAACBDAD
+counts: -1.5e-3
+==[ counts.0 6 20261113T090005.000Z ]==QkUAHAFCkUCCBCBACAAAAAAABAD
+counts: 0
+==[ counts.1 7 20261113T090006.000Z ]==KAABAFCnZCCdGCCACAAAAAAACBDAD
+states: c
+==[ states.0 8 20261113T090007.000Z ]==KBABAFCrACCgHCCBCBACAAAABAD
+links: words.1
+==[ links.0 9 20261113T090008.000Z ]==PBAHAFCtZCCjGCCdACBBCBACABAD
+links: notes
+==[ links.1 10 20261113T090009.000Z ]==NgEAFAFCxDCCmKCCgECBdFCCACACBDAD
+links: title
+==[ links.2 11 20261113T090010.000Z ]==NBAFAFCbaKCCpRCCjLCBgMCDACADdIDBDAD

@@ -386,3 +386,38 @@ func (l Leaf) String() string {
 	b, _ := l.Bytes()
 	return string(b)
 }
+
+// Dump returns a value as plain data, for tests and tools: an object is a
+// map of its fields, a list a slice of its items, a leaf its string or nil if
+// absent.
+func Dump(x any) (any, error) {
+	switch v := x.(type) {
+	case Leaf:
+		if !v.Present {
+			return nil, nil
+		}
+		b, err := v.Bytes()
+		return string(b), err
+	case *List:
+		out := []any{}
+		err := v.Range(0, v.Len(), func(_ uint64, item any) error {
+			d, err := Dump(item)
+			out = append(out, d)
+			return err
+		})
+		return out, err
+	case *Object:
+		out := map[string]any{}
+		for _, fld := range v.typ.Fields {
+			c, err := v.Field(fld.Name)
+			if err != nil {
+				return nil, err
+			}
+			if out[fld.Name], err = Dump(c); err != nil {
+				return nil, err
+			}
+		}
+		return out, nil
+	}
+	return nil, fmt.Errorf("trak: can't dump a %T", x)
+}

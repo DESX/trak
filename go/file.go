@@ -20,10 +20,12 @@ type File struct {
 	closer    io.Closer
 	schema    *Schema
 	schemaEnd int64 // where the first append starts
+	rootEnd   int64 // where the root append (version 1) ends
 	size      int64 // the end of the last valid append
 	latest    *footer
 	cache     footerCache
 	buf       []byte
+	reads     uint64 // footers read from the file, for measuring
 }
 
 // Open opens a trak file for reading.
@@ -144,8 +146,8 @@ func (f *File) readHeader(size int64) error {
 	if err != nil {
 		return err
 	}
-	if len(vals) < 2 || vals[1] != uint64(len(vals)-2) {
-		return formatErr(vstart, "the schema header holds a length, then an extension count and its VLQs")
+	if len(vals) < 3 || vals[2] != uint64(len(vals)-3) {
+		return formatErr(vstart, "the schema header holds two lengths, then an extension count and its VLQs")
 	}
 	textStart := int64(nl+1) + int64(end) + 1
 	if vals[0] == 0 || vals[0] > uint64(size-textStart) {
@@ -162,6 +164,10 @@ func (f *File) readHeader(size int64) error {
 		return err
 	}
 	f.schemaEnd = textStart + int64(len(text))
+	if vals[1] == 0 || vals[1] > uint64(size-f.schemaEnd) {
+		return formatErr(vstart, "root append length %d runs past the end of the file", vals[1])
+	}
+	f.rootEnd = f.schemaEnd + int64(vals[1])
 	return nil
 }
 
@@ -216,12 +222,12 @@ func (f *File) validFooter(end int64) (*footer, error) {
 		return nil, err
 	}
 	if ft.version == 1 {
-		if ft.body != f.schemaEnd {
-			return nil, formatErr(ft.body, "version 1 must follow the schema")
+		if ft.body != f.schemaEnd || ft.end != f.rootEnd {
+			return nil, formatErr(ft.body, "version 1 must follow the schema, with the length its header gives")
 		}
 		return ft, nil
 	}
-	if ft.body <= f.schemaEnd {
+	if ft.body < f.rootEnd {
 		return nil, formatErr(ft.body, "version %d has no append before it", ft.version)
 	}
 	prev, err := f.footer(ft.body)
@@ -293,6 +299,7 @@ func (f *File) footer(end int64) (*footer, error) {
 		if err != nil {
 			return nil, err
 		}
+		f.reads++
 		if data[len(data)-1] != '\n' {
 			return nil, formatErr(end, "no append ends here")
 		}
@@ -373,6 +380,9 @@ func (f *File) footerAt(v uint64) (*footer, error) {
 	if v == 0 || f.latest == nil || v > f.latest.version {
 		return nil, fmt.Errorf("%w: version %d of %d", ErrNotFound, v, f.Version())
 	}
+	if v == 1 {
+		return f.footer(f.rootEnd)
+	}
 	cur := f.latest
 	for cur.version > v {
 		jv := Jump(cur.version)
@@ -420,6 +430,13 @@ func (f *File) footerAtTime(t time.Time) (*footer, error) {
 	}
 	return cur, nil
 }
+
+// Reads returns how many footers have been read from the file, and ForgetCache
+// empties the footer cache: together they count the reads a lookup costs.
+func (f *File) Reads() uint64 { return f.reads }
+
+// ForgetCache empties the footer cache.
+func (f *File) ForgetCache() { f.cache = newFooterCache(f.cache.max) }
 
 // Append describes one append.
 type Append struct {
@@ -472,11 +489,7 @@ func (f *File) Root(v uint64) (*Object, error) {
 }
 
 func (f *File) rootOf(ft *footer) *Object {
-	leaves := ft.end
-	if ft.version > 1 {
-		leaves = 0 // found lazily: the root's leaves are in version 1
-	}
-	return &Object{f: f, typ: f.schema.Root, node: ref{end: ft.end, i: 1}, leaves: leaves, version: ft.version}
+	return &Object{f: f, typ: f.schema.Root, node: ref{end: ft.end, i: 1}, leaves: f.rootEnd, version: ft.version}
 }
 
 // Get resolves a path at version v. Negative item numbers count back from the

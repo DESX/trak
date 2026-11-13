@@ -1,0 +1,292 @@
+{
+ "dumps": {
+  "1": {
+   "config": {
+    "limits": {
+     "hard": [],
+     "soft": []
+    },
+    "name": []
+   },
+   "items": []
+  },
+  "2": {
+   "config": {
+    "limits": {
+     "hard": [],
+     "soft": [
+      "10"
+     ]
+    },
+    "name": []
+   },
+   "items": []
+  },
+  "3": {
+   "config": {
+    "limits": {
+     "hard": [],
+     "soft": [
+      "10"
+     ]
+    },
+    "name": [
+     "first"
+    ]
+   },
+   "items": []
+  },
+  "4": {
+   "config": {
+    "limits": {
+     "hard": [],
+     "soft": [
+      "10"
+     ]
+    },
+    "name": [
+     "first"
+    ]
+   },
+   "items": [
+    {
+     "extra": {
+      "why": null
+     },
+     "label": "a",
+     "meta": {
+      "owner": "ann",
+      "size": null
+     },
+     "sub": {
+      "log": []
+     }
+    }
+   ]
+  },
+  "5": {
+   "config": {
+    "limits": {
+     "hard": [],
+     "soft": [
+      "10"
+     ]
+    },
+    "name": [
+     "first"
+    ]
+   },
+   "items": [
+    {
+     "extra": {
+      "why": null
+     },
+     "label": "a",
+     "meta": {
+      "owner": "ann",
+      "size": null
+     },
+     "sub": {
+      "log": []
+     }
+    },
+    {
+     "extra": {
+      "why": "because\nof this"
+     },
+     "label": "b",
+     "meta": {
+      "owner": "bo",
+      "size": "3"
+     },
+     "sub": {
+      "log": []
+     }
+    }
+   ]
+  },
+  "6": {
+   "config": {
+    "limits": {
+     "hard": [],
+     "soft": [
+      "10"
+     ]
+    },
+    "name": [
+     "first"
+    ]
+   },
+   "items": [
+    {
+     "extra": {
+      "why": null
+     },
+     "label": "a",
+     "meta": {
+      "owner": "ann",
+      "size": null
+     },
+     "sub": {
+      "log": [
+       "started"
+      ]
+     }
+    },
+    {
+     "extra": {
+      "why": "because\nof this"
+     },
+     "label": "b",
+     "meta": {
+      "owner": "bo",
+      "size": "3"
+     },
+     "sub": {
+      "log": []
+     }
+    }
+   ]
+  },
+  "7": {
+   "config": {
+    "limits": {
+     "hard": [
+      "20"
+     ],
+     "soft": [
+      "10"
+     ]
+    },
+    "name": [
+     "first"
+    ]
+   },
+   "items": [
+    {
+     "extra": {
+      "why": null
+     },
+     "label": "a",
+     "meta": {
+      "owner": "ann",
+      "size": null
+     },
+     "sub": {
+      "log": [
+       "started"
+      ]
+     }
+    },
+    {
+     "extra": {
+      "why": "because\nof this"
+     },
+     "label": "b",
+     "meta": {
+      "owner": "bo",
+      "size": "3"
+     },
+     "sub": {
+      "log": []
+     }
+    }
+   ]
+  },
+  "8": {
+   "config": {
+    "limits": {
+     "hard": [
+      "20"
+     ],
+     "soft": [
+      "10"
+     ]
+    },
+    "name": [
+     "first"
+    ]
+   },
+   "items": [
+    {
+     "extra": {
+      "why": null
+     },
+     "label": "a",
+     "meta": {
+      "owner": "ann",
+      "size": null
+     },
+     "sub": {
+      "log": [
+       "started",
+       "done"
+      ]
+     }
+    },
+    {
+     "extra": {
+      "why": "because\nof this"
+     },
+     "label": "b",
+     "meta": {
+      "owner": "bo",
+      "size": "3"
+     },
+     "sub": {
+      "log": []
+     }
+    }
+   ]
+  },
+  "9": {
+   "config": {
+    "limits": {
+     "hard": [
+      "20"
+     ],
+     "soft": [
+      "10",
+      "12"
+     ]
+    },
+    "name": [
+     "first"
+    ]
+   },
+   "items": [
+    {
+     "extra": {
+      "why": null
+     },
+     "label": "a",
+     "meta": {
+      "owner": "ann",
+      "size": null
+     },
+     "sub": {
+      "log": [
+       "started",
+       "done"
+      ]
+     }
+    },
+    {
+     "extra": {
+      "why": "because\nof this"
+     },
+     "label": "b",
+     "meta": {
+      "owner": "bo",
+      "size": "3"
+     },
+     "sub": {
+      "log": []
+     }
+    }
+   ]
+  }
+ },
+ "size": 1226,
+ "version": 9
+}

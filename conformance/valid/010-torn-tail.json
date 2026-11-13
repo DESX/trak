@@ -1,0 +1,564 @@
+{
+ "dumps": {
+  "1": {
+   "builds": [],
+   "config": {
+    "retries": []
+   },
+   "name": "ci-1"
+  },
+  "10": {
+   "builds": [
+    {
+     "host": {
+      "cores": "0",
+      "name": "h"
+     },
+     "log": "line 1\n--[ log ]--\nbuild 0",
+     "parent": null,
+     "status": [
+      "running"
+     ],
+     "user": "u0"
+    },
+    {
+     "host": {
+      "cores": "1",
+      "name": "h"
+     },
+     "log": "line 1\n--[ log ]--\nbuild 1",
+     "parent": null,
+     "status": [
+      "running",
+      "ok"
+     ],
+     "user": "u1"
+    },
+    {
+     "host": {
+      "cores": "2",
+      "name": "h"
+     },
+     "log": "line 1\n--[ log ]--\nbuild 2",
+     "parent": null,
+     "status": [
+      "running"
+     ],
+     "user": "u2"
+    },
+    {
+     "host": {
+      "cores": "3",
+      "name": "h"
+     },
+     "log": "line 1\n--[ log ]--\nbuild 3",
+     "parent": null,
+     "status": [
+      "running"
+     ],
+     "user": "u3"
+    }
+   ],
+   "config": {
+    "retries": []
+   },
+   "name": "ci-1"
+  },
+  "11": {
+   "builds": [
+    {
+     "host": {
+      "cores": "0",
+      "name": "h"
+     },
+     "log": "line 1\n--[ log ]--\nbuild 0",
+     "parent": null,
+     "status": [
+      "running"
+     ],
+     "user": "u0"
+    },
+    {
+     "host": {
+      "cores": "1",
+      "name": "h"
+     },
+     "log": "line 1\n--[ log ]--\nbuild 1",
+     "parent": null,
+     "status": [
+      "running",
+      "ok"
+     ],
+     "user": "u1"
+    },
+    {
+     "host": {
+      "cores": "2",
+      "name": "h"
+     },
+     "log": "line 1\n--[ log ]--\nbuild 2",
+     "parent": null,
+     "status": [
+      "running"
+     ],
+     "user": "u2"
+    },
+    {
+     "host": {
+      "cores": "3",
+      "name": "h"
+     },
+     "log": "line 1\n--[ log ]--\nbuild 3",
+     "parent": null,
+     "status": [
+      "running"
+     ],
+     "user": "u3"
+    }
+   ],
+   "config": {
+    "retries": [
+     "3"
+    ]
+   },
+   "name": "ci-1"
+  },
+  "12": {
+   "builds": [
+    {
+     "host": {
+      "cores": "0",
+      "name": "h"
+     },
+     "log": "line 1\n--[ log ]--\nbuild 0",
+     "parent": null,
+     "status": [
+      "running"
+     ],
+     "user": "u0"
+    },
+    {
+     "host": {
+      "cores": "1",
+      "name": "h"
+     },
+     "log": "line 1\n--[ log ]--\nbuild 1",
+     "parent": null,
+     "status": [
+      "running",
+      "ok"
+     ],
+     "user": "u1"
+    },
+    {
+     "host": {
+      "cores": "2",
+      "name": "h"
+     },
+     "log": "line 1\n--[ log ]--\nbuild 2",
+     "parent": null,
+     "status": [
+      "running"
+     ],
+     "user": "u2"
+    },
+    {
+     "host": {
+      "cores": "3",
+      "name": "h"
+     },
+     "log": "line 1\n--[ log ]--\nbuild 3",
+     "parent": null,
+     "status": [
+      "running"
+     ],
+     "user": "u3"
+    },
+    {
+     "host": {
+      "cores": null,
+      "name": "h"
+     },
+     "log": "",
+     "parent": "builds.1",
+     "status": [],
+     "user": "x"
+    }
+   ],
+   "config": {
+    "retries": [
+     "3"
+    ]
+   },
+   "name": "ci-1"
+  },
+  "13": {
+   "builds": [
+    {
+     "host": {
+      "cores": "0",
+      "name": "h"
+     },
+     "log": "line 1\n--[ log ]--\nbuild 0",
+     "parent": null,
+     "status": [
+      "running"
+     ],
+     "user": "u0"
+    },
+    {
+     "host": {
+      "cores": "1",
+      "name": "h"
+     },
+     "log": "line 1\n--[ log ]--\nbuild 1",
+     "parent": null,
+     "status": [
+      "running",
+      "ok"
+     ],
+     "user": "u1"
+    },
+    {
+     "host": {
+      "cores": "2",
+      "name": "h"
+     },
+     "log": "line 1\n--[ log ]--\nbuild 2",
+     "parent": null,
+     "status": [
+      "running"
+     ],
+     "user": "u2"
+    },
+    {
+     "host": {
+      "cores": "3",
+      "name": "h"
+     },
+     "log": "line 1\n--[ log ]--\nbuild 3",
+     "parent": null,
+     "status": [
+      "running",
+      "failed"
+     ],
+     "user": "u3"
+    },
+    {
+     "host": {
+      "cores": null,
+      "name": "h"
+     },
+     "log": "",
+     "parent": "builds.1",
+     "status": [],
+     "user": "x"
+    }
+   ],
+   "config": {
+    "retries": [
+     "3"
+    ]
+   },
+   "name": "ci-1"
+  },
+  "2": {
+   "builds": [
+    {
+     "host": {
+      "cores": "0",
+      "name": "h"
+     },
+     "log": "line 1\n--[ log ]--\nbuild 0",
+     "parent": null,
+     "status": [],
+     "user": "u0"
+    }
+   ],
+   "config": {
+    "retries": []
+   },
+   "name": "ci-1"
+  },
+  "3": {
+   "builds": [
+    {
+     "host": {
+      "cores": "0",
+      "name": "h"
+     },
+     "log": "line 1\n--[ log ]--\nbuild 0",
+     "parent": null,
+     "status": [
+      "running"
+     ],
+     "user": "u0"
+    }
+   ],
+   "config": {
+    "retries": []
+   },
+   "name": "ci-1"
+  },
+  "4": {
+   "builds": [
+    {
+     "host": {
+      "cores": "0",
+      "name": "h"
+     },
+     "log": "line 1\n--[ log ]--\nbuild 0",
+     "parent": null,
+     "status": [
+      "running"
+     ],
+     "user": "u0"
+    },
+    {
+     "host": {
+      "cores": "1",
+      "name": "h"
+     },
+     "log": "line 1\n--[ log ]--\nbuild 1",
+     "parent": null,
+     "status": [],
+     "user": "u1"
+    }
+   ],
+   "config": {
+    "retries": []
+   },
+   "name": "ci-1"
+  },
+  "5": {
+   "builds": [
+    {
+     "host": {
+      "cores": "0",
+      "name": "h"
+     },
+     "log": "line 1\n--[ log ]--\nbuild 0",
+     "parent": null,
+     "status": [
+      "running"
+     ],
+     "user": "u0"
+    },
+    {
+     "host": {
+      "cores": "1",
+      "name": "h"
+     },
+     "log": "line 1\n--[ log ]--\nbuild 1",
+     "parent": null,
+     "status": [
+      "running"
+     ],
+     "user": "u1"
+    }
+   ],
+   "config": {
+    "retries": []
+   },
+   "name": "ci-1"
+  },
+  "6": {
+   "builds": [
+    {
+     "host": {
+      "cores": "0",
+      "name": "h"
+     },
+     "log": "line 1\n--[ log ]--\nbuild 0",
+     "parent": null,
+     "status": [
+      "running"
+     ],
+     "user": "u0"
+    },
+    {
+     "host": {
+      "cores": "1",
+      "name": "h"
+     },
+     "log": "line 1\n--[ log ]--\nbuild 1",
+     "parent": null,
+     "status": [
+      "running"
+     ],
+     "user": "u1"
+    },
+    {
+     "host": {
+      "cores": "2",
+      "name": "h"
+     },
+     "log": "line 1\n--[ log ]--\nbuild 2",
+     "parent": null,
+     "status": [],
+     "user": "u2"
+    }
+   ],
+   "config": {
+    "retries": []
+   },
+   "name": "ci-1"
+  },
+  "7": {
+   "builds": [
+    {
+     "host": {
+      "cores": "0",
+      "name": "h"
+     },
+     "log": "line 1\n--[ log ]--\nbuild 0",
+     "parent": null,
+     "status": [
+      "running"
+     ],
+     "user": "u0"
+    },
+    {
+     "host": {
+      "cores": "1",
+      "name": "h"
+     },
+     "log": "line 1\n--[ log ]--\nbuild 1",
+     "parent": null,
+     "status": [
+      "running"
+     ],
+     "user": "u1"
+    },
+    {
+     "host": {
+      "cores": "2",
+      "name": "h"
+     },
+     "log": "line 1\n--[ log ]--\nbuild 2",
+     "parent": null,
+     "status": [
+      "running"
+     ],
+     "user": "u2"
+    }
+   ],
+   "config": {
+    "retries": []
+   },
+   "name": "ci-1"
+  },
+  "8": {
+   "builds": [
+    {
+     "host": {
+      "cores": "0",
+      "name": "h"
+     },
+     "log": "line 1\n--[ log ]--\nbuild 0",
+     "parent": null,
+     "status": [
+      "running"
+     ],
+     "user": "u0"
+    },
+    {
+     "host": {
+      "cores": "1",
+      "name": "h"
+     },
+     "log": "line 1\n--[ log ]--\nbuild 1",
+     "parent": null,
+     "status": [
+      "running"
+     ],
+     "user": "u1"
+    },
+    {
+     "host": {
+      "cores": "2",
+      "name": "h"
+     },
+     "log": "line 1\n--[ log ]--\nbuild 2",
+     "parent": null,
+     "status": [
+      "running"
+     ],
+     "user": "u2"
+    },
+    {
+     "host": {
+      "cores": "3",
+      "name": "h"
+     },
+     "log": "line 1\n--[ log ]--\nbuild 3",
+     "parent": null,
+     "status": [],
+     "user": "u3"
+    }
+   ],
+   "config": {
+    "retries": []
+   },
+   "name": "ci-1"
+  },
+  "9": {
+   "builds": [
+    {
+     "host": {
+      "cores": "0",
+      "name": "h"
+     },
+     "log": "line 1\n--[ log ]--\nbuild 0",
+     "parent": null,
+     "status": [
+      "running"
+     ],
+     "user": "u0"
+    },
+    {
+     "host": {
+      "cores": "1",
+      "name": "h"
+     },
+     "log": "line 1\n--[ log ]--\nbuild 1",
+     "parent": null,
+     "status": [
+      "running"
+     ],
+     "user": "u1"
+    },
+    {
+     "host": {
+      "cores": "2",
+      "name": "h"
+     },
+     "log": "line 1\n--[ log ]--\nbuild 2",
+     "parent": null,
+     "status": [
+      "running"
+     ],
+     "user": "u2"
+    },
+    {
+     "host": {
+      "cores": "3",
+      "name": "h"
+     },
+     "log": "line 1\n--[ log ]--\nbuild 3",
+     "parent": null,
+     "status": [
+      "running"
+     ],
+     "user": "u3"
+    }
+   ],
+   "config": {
+    "retries": []
+   },
+   "name": "ci-1"
+  }
+ },
+ "size": 1923,
+ "version": 13
+}

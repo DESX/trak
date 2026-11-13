@@ -1,1 +1,57 @@
-<!doctype html><title>trak</title>
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>trak viewer</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <aside id="files">
+      <header>
+        <span class="brand">trak</span>
+        <button id="add" title="Open a file" aria-label="Open a file">+</button>
+      </header>
+      <ul id="file-list"></ul>
+    </aside>
+    <main>
+      <nav id="tabs" role="tablist"></nav>
+      <section id="views"></section>
+      <footer id="status">
+        <span class="info"></span>
+        <span class="spacer"></span>
+        <button id="schema" title="Show the file's schema">Schema</button>
+        <button id="follow" title="Check for new appends every 2 seconds">Follow</button>
+        <button id="debug-toggle" title="Every byte range the viewer has read">0 requests</button>
+      </footer>
+    </main>
+    <section id="debug" hidden>
+      <header>
+        <b>Byte ranges read</b>
+        <span class="dim">newest first; each row is one request</span>
+        <span class="spacer"></span>
+        <button id="debug-clear">Clear</button>
+      </header>
+      <div class="debug-scroll">
+        <table>
+          <thead>
+            <tr><th>#</th><th>ranges</th><th>bytes</th><th>time</th><th>offset+length</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+    <dialog id="picker">
+      <header>
+        <span>Open a trak file</span>
+        <button id="picker-close" title="Close">×</button>
+      </header>
+      <div class="picker-where dim"></div>
+      <ul class="picker-list"></ul>
+      <footer>
+        <label class="local">Or read a file from this computer <input type="file" id="pick-local" accept=".trak" /></label>
+      </footer>
+    </dialog>
+    <script type="module" src="app.js"></script>
+  </body>
+</html>

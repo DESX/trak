@@ -1,7 +1,11 @@
-package main
+// Package sophie writes synthetic Sophie logs (docs/sophie.md) for testing and
+// benchmarks: interleaved sessions with stand-in content. Output depends only
+// on the Config.
+package sophie
 
 import (
 	"bytes"
+	_ "embed"
 	"fmt"
 	"math"
 	"math/rand/v2"
@@ -10,6 +14,11 @@ import (
 
 	trak "github.com/desx/trak/go"
 )
+
+// Schema is the Sophie schema from docs/sophie.md.
+//
+//go:embed sophie.schema
+var Schema string
 
 // Config sets what Generate writes.
 type Config struct {
@@ -95,6 +104,7 @@ type gen struct {
 	agents                                        map[string][]byte
 
 	nextLogin   [2]int64
+	nextBlock   [2]int64 // when a backend's quota next runs out
 	blocked     [2]bool
 	openAt      [2]int64
 	nextDefault int64
@@ -108,7 +118,7 @@ func Generate(name string, cfg Config) (Stats, error) {
 	g.scale = float64(cfg.Size) / fullSize
 	g.now = time.Date(2026, 3, 2, 8, 0, 0, 0, time.UTC).UnixMilli()
 	os.Remove(name)
-	w, err := trak.Create(name, schema, map[string]any{"version": "sophie 0.9.3"}, time.UnixMilli(g.now), &trak.Options{Policy: cfg.Policy})
+	w, err := trak.Create(name, Schema, map[string]any{"version": "sophie 0.9.3"}, time.UnixMilli(g.now), &trak.Options{Policy: cfg.Policy})
 	if err != nil {
 		return g.st, err
 	}
@@ -147,6 +157,7 @@ func (g *gen) run() error {
 		return err
 	}
 	g.nextLogin = [2]int64{g.now, g.now + 90_000}
+	g.nextBlock = [2]int64{g.now + g.interval(8*3_600_000), g.now + g.interval(30*3_600_000)}
 	g.nextDefault = g.now + g.interval(67*60_000)
 	for i := 0; i < 8; i++ {
 		if _, err := g.newSession(false); err != nil {
@@ -630,8 +641,9 @@ func (g *gen) cycle(s *session) {
 		s.results++
 		s.queue = append(s.queue, op{p + ".results", map[string]any{"message": g.t.slice(g.r, g.t.prose, lognormal(g.r, 300, 0.8, 30, 4000)), "turn": turn(t)}})
 	}
-	if !g.blocked[backendIndex(s.backend)] && g.r.Float64() < 0.00006 {
-		s.queue = append(s.queue, op{"quota", quotaHit{b: backendIndex(s.backend), turn: turn(t)}})
+	if b := backendIndex(s.backend); !g.blocked[b] && g.now >= g.nextBlock[b] {
+		g.nextBlock[b] = g.now + g.interval(48*3_600_000)
+		s.queue = append(s.queue, op{"quota", quotaHit{b: b, turn: turn(t)}})
 	}
 	out := g.output()
 	var stderr []byte

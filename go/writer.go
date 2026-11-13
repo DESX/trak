@@ -24,6 +24,7 @@ type Writer struct {
 	body    []byte
 	lens    []byte
 	scratch []byte
+	hook    func(p *plan, vjump *int64) // tests: break an append on purpose
 }
 
 // Create creates a new file with the schema and writes version 1, the root's
@@ -52,21 +53,24 @@ func Create(name, schema string, root map[string]any, t time.Time, opt *Options)
 	if err := lockFile(fh); err != nil {
 		return fail(err)
 	}
-	head := []byte(Magic + "##[ schema ]##")
-	head = AppendVLQ(head, uint64(len(schema)))
-	head = append(AppendVLQ(head, 0), '\n')
-	head = append(head, schema...)
-	// A File over just the header, so the root append can be planned.
-	w.f = &File{r: fh, schema: s, schemaEnd: int64(len(head)), size: int64(len(head)), cache: newFooterCache(1 << 14)}
-	p := planRoot(s)
-	rec, err := w.encode(p, root, t, int64(len(head)))
+	// The root append's length goes in the header, and the root append's
+	// references don't depend on where it starts, so encode it first.
+	w.f = &File{schema: s, cache: newFooterCache(1 << 14)}
+	rec, err := w.encode(planRoot(s), root, t, 0)
 	if err != nil {
 		return fail(err)
 	}
+	head := []byte(Magic + "##[ schema ]##")
+	head = AppendVLQ(head, uint64(len(schema)))
+	head = AppendVLQ(head, uint64(len(rec)))
+	head = append(AppendVLQ(head, 0), '\n')
+	head = append(head, schema...)
 	if _, err := fh.Write(append(head, rec...)); err != nil {
 		return fail(err)
 	}
-	if err := w.committed(int64(len(head) + len(rec))); err != nil {
+	w.f.r, w.f.schemaEnd, w.f.size = fh, int64(len(head)), int64(len(head))
+	w.f.rootEnd = int64(len(head) + len(rec))
+	if err := w.committed(w.f.rootEnd); err != nil {
 		return fail(err)
 	}
 	if w.opt.Sync {
@@ -191,6 +195,9 @@ func (w *Writer) encode(p *plan, value any, t time.Time, start int64) ([]byte, e
 			}
 			vjump = ft.end
 		}
+	}
+	if w.hook != nil {
+		w.hook(p, &vjump)
 	}
 	w.body, w.lens = w.body[:0], w.lens[:0]
 	var err error

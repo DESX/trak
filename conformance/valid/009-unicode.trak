@@ -1,0 +1,20 @@
+trak 1.2
+##[ schema ]##gHdEA
+# Lists of leaves.
+root leaves {
+  title: str,
+  words: event str,
+  notes: event |str,
+  counts: event num,
+  states: event enum(a, b, c),
+  links: event path,
+}
+title: ünïcödé ✓
+==[ leaves 1 20261113T090000.000Z ]==XAAPAFAAAAAAAAAAAAAAA
+words: 日本語
+==[ words.0 2 20261113T090001.000Z ]==RBAJAFBACAAAAAAAAAAAAABAD
+--[ notes ]--
+emoji 🎉
+windows line
+--[ /notes ]--
+==[ notes.0 3 20261113T090002.000Z ]==cCAAYAFBBCBACAAAAAAAAAABAD

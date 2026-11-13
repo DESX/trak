@@ -1,0 +1,41 @@
+trak 1.2
+##[ schema ]##kRbUA
+# Nested objects with event lists.
+root nest {
+  config: {
+    limits: { soft: event num, hard: event num },
+    name: event str,
+  },
+  items: event item,
+}
+
+object item {
+  label: str,
+  meta: { owner: str, size: num? },
+  extra: { why: |str }?,
+  sub: { log: event str },
+}
+==[ nest 1 20261113T090000.000Z ]==AAAACAAAAA
+soft: 10
+==[ config.limits.soft.0 2 20261113T090001.000Z ]==JBACACACAAAAAAAAACADAAAAAAAAACBAEAAAABAF
+name: first
+==[ config.name.0 3 20261113T090002.000Z ]==MAAFACACAAABBCBCACBDBADABAE
+label: a
+meta.owner: ann
+==[ items.0 4 20261113T090003.000Z ]==ZBABDAAACBCBACABADAAAAAAABAA
+label: b
+meta.owner: bo
+meta.size: 3
+--[ extra.why ]--
+because
+of this
+--[ /extra.why ]--
+==[ items.1 5 20261113T090004.000Z ]==dMBABCBBBPACdPCCACACBDADAAAAAAABAA
+log: started
+==[ items.0.sub.log.0 6 20261113T090005.000Z ]==NjWAHACjWCCACACADBDBgIDgIDgIABAEAAAAAABBAFABAG
+hard: 20
+==[ config.limits.hard.0 7 20261113T090006.000Z ]==JAACACACCBCCoACoACACADBoADBrGDrGDACBrGEBAEABAF
+log: done
+==[ items.0.sub.log.1 8 20261113T090007.000Z ]==KBAEACBCCACACADiIDCeEDeEDoPABAEBeEEeEEABCAFACeEGAG
+soft: 12
+==[ config.limits.soft.1 9 20261113T090008.000Z ]==JBACACACCBCDeGCzOCACADBwIDCeGDeGDACCAEBeGEACzOFAF

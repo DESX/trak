@@ -1,0 +1,67 @@
+trak 1.2
+##[ schema ]##mKcEA
+# A CI server.
+root ci {
+  name: str,
+  builds: event build,
+  config: {                    # settings
+    retries: event num,
+  },
+}
+
+# One build.
+object build {
+  user: str,                   # who started it
+  status: event enum(running, ok, failed),
+  log: |str,
+  host: { name: str, cores: num? },
+  parent: path?,
+}
+name: ci-1
+==[ ci 1 20261113T090000.000Z ]==LAAEACAAAAA
+user: u0
+--[ log ]--
+line 1
+--[ log ]--
+build 0
+--[ /log ]--
+host.name: h
+host.cores: 0
+==[ builds.0 2 20261113T090001.000Z ]==dKBACbABBBAACBACAAABADAAAAAAABAAA
+status: running
+==[ builds.0.status.0 3 20261113T090002.000Z ]==QAAHACBACAAABADBBDBDBABBAEABAF
+user: u1
+--[ log ]--
+line 1
+--[ log ]--
+build 1
+--[ /log ]--
+host.name: h
+host.cores: 1
+==[ builds.1 4 20261113T090003.000Z ]==dKBACbABBBAACCACAAACBDADAAAAAAABAAA
+status: running
+==[ builds.1.status.0 5 20261113T090004.000Z ]==QBAHACCACAAACgIDADBBDBDBABBAEABAF
+user: u2
+--[ log ]--
+line 1
+--[ log ]--
+build 2
+--[ /log ]--
+host.name: h
+host.cores: 2
+==[ builds.2 6 20261113T090005.000Z ]==dKkCACbABBBAACDACAAADkCDBDADAAAAAAABAAA
+status: running
+==[ builds.2.status.0 7 20261113T090006.000Z ]==QAAHACDACAAADqNDgMDADBBDBDBABBAEABAF
+user: u3
+--[ log ]--
+line 1
+--[ log ]--
+build 3
+--[ /log ]--
+host.name: h
+host.cores: 3
+==[ builds.3 8 20261113T090007.000Z ]==dKAACbABBBAACEACAAAEuKDkJDBDADAAAAAAABAAA
+status: running
+==[ builds.3.status.0 9 20261113T090008.000Z ]==QBAHACEACAAAEbaXDqWDgODADBBDBDBABBAEABAF
+status: ok
+==[ builds.1.status.1 10 20261113T090009.000Z ]==LkPACACEACAAAEbeYDADkPDBDCuXDuXDyRABCAEACuXFAF

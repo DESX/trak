@@ -79,8 +79,8 @@ func (f *File) check(opt *CheckOptions) (*Report, error) {
 		}
 		ends[cur.version] = cur.end
 		if cur.version == 1 {
-			if cur.body != f.schemaEnd {
-				return rep, formatErr(cur.body, "version 1 must follow the schema")
+			if cur.body != f.schemaEnd || cur.end != f.rootEnd {
+				return rep, formatErr(cur.body, "version 1 must follow the schema, with the length its header gives")
 			}
 			break
 		}

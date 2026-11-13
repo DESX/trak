@@ -6,7 +6,6 @@
 package main
 
 import (
-	_ "embed"
 	"flag"
 	"fmt"
 	"os"
@@ -15,10 +14,8 @@ import (
 	"time"
 
 	trak "github.com/desx/trak/go"
+	"github.com/desx/trak/go/internal/sophie"
 )
-
-//go:embed sophie.schema
-var schema string
 
 func main() {
 	size := flag.String("size", "100MB", "target size: about this many bytes with the reference policy")
@@ -42,15 +39,15 @@ func main() {
 	if err != nil {
 		fatal(err)
 	}
-	var progress func(st Stats)
+	var progress func(st sophie.Stats)
 	if !*quiet {
 		start := time.Now()
-		progress = func(st Stats) {
+		progress = func(st sophie.Stats) {
 			fmt.Fprintf(os.Stderr, "\r%6.0f MB  %8d appends  %6d sessions  %7d turns  %5.0fs",
 				float64(st.Bytes)/1e6, st.Appends, st.Sessions, st.Turns, time.Since(start).Seconds())
 		}
 	}
-	st, err := Generate(flag.Arg(0), Config{Size: target, Seed: *seed, Policy: pol, Progress: progress})
+	st, err := sophie.Generate(flag.Arg(0), sophie.Config{Size: target, Seed: *seed, Policy: pol, Progress: progress})
 	if progress != nil {
 		fmt.Fprintln(os.Stderr)
 	}

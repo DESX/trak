@@ -1,0 +1,9 @@
+trak 1.2
+##[ schema ]##cScMA
+# A root with only leaves.
+root plain {
+  name: str,
+  note: |str?,
+}
+name: just the root
+==[ plain 1 20261113T090000.000Z ]==UAANAAA

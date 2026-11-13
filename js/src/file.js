@@ -22,6 +22,7 @@ export class TrakFile {
     this.blocks = blocks;
     this.schema = null;
     this.schemaEnd = 0;
+    this.rootEnd = 0;
     this.size = 0;
     this.latest = null;
     this.magic = "";
@@ -45,13 +46,15 @@ export class TrakFile {
     const end = head.indexOf(10, nl + 1);
     if (end < 0 || dec.decode(head.subarray(nl + 1, nl + 1 + tag.length)) !== tag) throw new FormatError("expected the schema header", nl + 1);
     const vals = decodeVLQs(head, nl + 1 + tag.length, end, 0);
-    if (vals.length < 2 || vals[1] !== vals.length - 2) throw new FormatError("the schema header holds a length, then an extension count and its VLQs", nl + 1);
+    if (vals.length < 3 || vals[2] !== vals.length - 3) throw new FormatError("the schema header holds two lengths, then an extension count and its VLQs", nl + 1);
     const textStart = end + 1;
     if (vals[0] === 0 || vals[0] > this.blocks.size - textStart) throw new FormatError(`schema length ${vals[0]} runs past the end of the file`, nl + 1);
     const text = await this.blocks.read(textStart, vals[0]);
     if (text[text.length - 1] !== 10) throw new FormatError("the schema text must end with LF", textStart + text.length - 1);
     this.schema = parseSchema(dec.decode(text));
     this.schemaEnd = textStart + vals[0];
+    if (vals[1] === 0 || vals[1] > this.blocks.size - this.schemaEnd) throw new FormatError(`root append length ${vals[1]} runs past the end of the file`, nl + 1);
+    this.rootEnd = this.schemaEnd + vals[1];
   }
 
   /** Find the last valid footer at or before `size` (SPEC §8). */
@@ -105,10 +108,10 @@ export class TrakFile {
     const ft = await this.footer(end);
     await this.walkBody(ft);
     if (ft.version === 1) {
-      if (ft.body !== this.schemaEnd) throw new FormatError("version 1 must follow the schema", ft.body);
+      if (ft.body !== this.schemaEnd || ft.end !== this.rootEnd) throw new FormatError("version 1 must follow the schema, with the length its header gives", ft.body);
       return ft;
     }
-    if (ft.body <= this.schemaEnd) throw new FormatError(`version ${ft.version} has no append before it`, ft.body);
+    if (ft.body < this.rootEnd) throw new FormatError(`version ${ft.version} has no append before it`, ft.body);
     const prev = await this.footer(ft.body);
     if (prev.version !== ft.version - 1) throw new FormatError(`version ${ft.version} follows version ${prev.version}`, ft.start);
     return ft;
@@ -199,6 +202,7 @@ export class TrakFile {
   /** The footer of version v. */
   async footerAt(v) {
     if (!this.latest || v < 1 || v > this.latest.version) throw new NotFoundError(`version ${v} of ${this.version}`);
+    if (v === 1) return this.footer(this.rootEnd);
     let cur = this.latest;
     while (cur.version > v) cur = await this.footer(jump(cur.version) >= v && cur.vjump ? cur.vjump : cur.body);
     return cur;
@@ -237,7 +241,7 @@ export class TrakFile {
   }
 
   rootOf(ft) {
-    return new TObject(this, this.schema.root, "", { end: ft.end, i: 1 }, ft.version === 1 ? ft.end : 0, "", ft.version);
+    return new TObject(this, this.schema.root, "", { end: ft.end, i: 1 }, this.rootEnd, "", ft.version);
   }
 
   /** Resolve a path at version v: a TObject, TList or TLeaf. */
