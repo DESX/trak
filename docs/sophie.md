@@ -2,7 +2,7 @@
 
 Nov 12, 2026 · Joel Chenette
 
-Sophie is an agent harness for chat-only model APIs. The model's every reply is a bash script; Sophie checks it, runs it, and feeds the result back. All state, configuration included, lives in one trak 1.1 file.
+Sophie is an agent harness for chat-only model APIs. The model's every reply is a bash script; Sophie checks it, runs it, and feeds the result back. All state, configuration included, lives in one trak 1.2 file.
 
 ## Backends and login
 
@@ -37,7 +37,7 @@ Configuration is part of the trak tree, not a separate file. Each setting is an 
 
 ## Schema
 
-The whole application is one trak 1.1 root. Defaults are versioned settings, so the history of every setting is on record. A session captures its setup when it's created, and points at the exact prompt versions it uses.
+The whole application is one trak 1.2 root. Defaults are versioned settings, so the history of every setting is on record. A session captures its setup when it's created, and points at the exact prompt versions it uses.
 
 ```
 # Sophie: an agent harness for chat-only model APIs.

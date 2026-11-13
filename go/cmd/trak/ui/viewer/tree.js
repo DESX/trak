@@ -149,6 +149,13 @@ export class TreeView {
     );
     rendered(fromJump ? "tree-jump" : "tree-step", t0);
     this.app.updateSpec(this);
+    // Read ahead one position each way, so the next step is already cached.
+    for (const q of [p + 1, p - 1]) {
+      if (q < 0 || q >= this.count) continue;
+      this.target(q)
+        .then(({ obj, item }) => this.lines(obj, "", 0, new Map(), item))
+        .catch(() => {});
+    }
   }
 
   /** Lines for every field of obj, opening what's open. */

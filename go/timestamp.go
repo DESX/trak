@@ -43,9 +43,6 @@ func validStampSyntax(s string) bool {
 	return true
 }
 
-// toMillis converts t to milliseconds since the epoch, rounding down.
-func toMillis(t time.Time) int64 { return t.UnixMilli() }
-
 func fromMillis(ms int64) time.Time { return time.UnixMilli(ms).UTC() }
 
 // appendStamp appends the trak timestamp for ms without going through

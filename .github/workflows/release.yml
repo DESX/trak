@@ -45,45 +45,15 @@ jobs:
           ext=""; [ "$GOOS" = windows ] && ext=".exe"
           name="trak-${GITHUB_REF_NAME}-${GOOS}-${GOARCH}${ext}"
           go build -trimpath -ldflags "-s -w" -o "../dist/${name}" ./cmd/trak
+          go build -trimpath -ldflags "-s -w" -o "../dist/sophie-gen-${GITHUB_REF_NAME}-${GOOS}-${GOARCH}${ext}" ./cmd/sophie-gen
       - uses: actions/upload-artifact@v5
         with:
           name: cli-${{ matrix.goos }}-${{ matrix.goarch }}
           path: dist/*
 
-  python:
-    name: build Python distributions
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
-        with:
-          python-version: "3.12"
-      - run: pip install build
-      - run: python -m build python --outdir dist
-      - uses: actions/upload-artifact@v5
-        with:
-          name: python-dist
-          path: dist/*
-
-  pypi:
-    name: publish to PyPI
-    needs: [python]
-    runs-on: ubuntu-latest
-    # Trusted publishing: configure the `pypi` environment and this workflow on
-    # pypi.org before the first release.
-    environment: pypi
-    permissions:
-      id-token: write
-    steps:
-      - uses: actions/download-artifact@v6
-        with:
-          name: python-dist
-          path: dist
-      - uses: pypa/gh-action-pypi-publish@release/v1
-
   github-release:
     name: GitHub release
-    needs: [cli, python]
+    needs: [cli]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5

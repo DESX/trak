@@ -9,46 +9,6 @@ permissions:
   contents: read
 
 jobs:
-  python:
-    name: python ${{ matrix.python }} / ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-        python: ["3.10", "3.11", "3.12", "3.13"]
-    defaults:
-      run:
-        working-directory: python
-    steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
-        with:
-          python-version: ${{ matrix.python }}
-      - run: pip install -e ".[dev]"
-      - run: ruff check .
-      - run: ruff format --check .
-      - run: mypy
-      - run: pytest --cov=trak --cov-report=term-missing --cov-fail-under=90
-        env:
-          # Full-size runs (1M-event bounds file, VLQ round trip to 10^7) on one job.
-          TRAK_SLOW: ${{ matrix.os == 'ubuntu-latest' && matrix.python == '3.12' && '1' || '' }}
-
-  conformance:
-    name: conformance vectors are up to date
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
-        with:
-          python-version: "3.12"
-      - run: pip install -e "python[dev]"
-      - run: python conformance/generate.py
-      - run: git diff --exit-code -- conformance
-      - run: ruff check conformance && ruff format --check conformance
-      - name: License copies match
-        run: cmp LICENSE python/LICENSE && cmp LICENSE go/LICENSE
-
   go:
     name: go ${{ matrix.go }} / ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
@@ -65,7 +25,7 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version: ${{ matrix.go }}
-          cache-dependency-path: go/go.sum
+          cache-dependency-path: go/go.mod
       - run: go vet ./...
       - run: go test -race ./...
         if: runner.os != 'Windows'
@@ -84,9 +44,14 @@ jobs:
           test -z "$(git status --porcelain -- .)"
       - name: Fuzz
         if: runner.os == 'Linux' && matrix.go == 'stable'
+        run: go test -run '^$' -fuzz '^FuzzRead$' -fuzztime 60s .
+      - name: A 200 MB Sophie file passes check, under each policy
+        if: runner.os == 'Linux' && matrix.go == 'stable'
         run: |
-          go test -run '^$' -fuzz '^FuzzReader$' -fuzztime 30s .
-          go test -run '^$' -fuzz '^FuzzSchemaParser$' -fuzztime 30s .
+          for p in reference delta; do
+            go run ./cmd/sophie-gen -q --size 200MB --seed 1 --policy $p "$RUNNER_TEMP/s-$p.trak"
+            go run ./cmd/trak check "$RUNNER_TEMP/s-$p.trak"
+          done
 
   js:
     name: javascript / node ${{ matrix.node }} / ${{ matrix.os }}
@@ -120,124 +85,25 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version: stable
-          cache-dependency-path: go/go.sum
-      - uses: actions/setup-python@v6
-        with:
-          python-version: "3.12"
+          cache-dependency-path: go/go.mod
       - uses: actions/setup-node@v5
         with:
           node-version: 22
       - run: npm ci
       - run: npx playwright install --with-deps chromium
+      # Shared runners are slower and noisier than a desk: time, but don't fail on, the targets.
       - run: npm test
+        env:
+          TRAK_STRICT: "0"
+          TRAK_PERF_OUT: perf.json
+      - uses: actions/upload-artifact@v5
+        with:
+          name: viewer-perf
+          path: viewer/test/perf.json
 
-  cpp:
-    name: c++ ${{ matrix.compiler }} / ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - { os: ubuntu-latest, compiler: gcc, cxx: g++ }
-          - { os: ubuntu-latest, compiler: clang, cxx: clang++ }
-          - { os: macos-latest, compiler: clang, cxx: clang++ }
-          - { os: windows-latest, compiler: msvc, cxx: cl }
-    steps:
-      - uses: actions/checkout@v5
-      - name: Configure
-        run: cmake -S cpp -B cpp/build -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=${{ matrix.cxx }} -DTRAK_WERROR=ON
-        if: runner.os != 'Windows'
-      - name: Configure (MSVC)
-        run: cmake -S cpp -B cpp/build -DTRAK_WERROR=ON
-        if: runner.os == 'Windows'
-      - run: cmake --build cpp/build --config Release --parallel
-      - run: ctest --test-dir cpp/build -C Release --output-on-failure
-
-  cpp-sanitize:
-    name: c++ asan+ubsan / ${{ matrix.compiler }}
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - { compiler: gcc, cxx: g++ }
-          - { compiler: clang, cxx: clang++ }
-    steps:
-      - uses: actions/checkout@v5
-      - run: cmake -S cpp -B cpp/build -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_COMPILER=${{ matrix.cxx }} -DTRAK_WERROR=ON -DTRAK_SANITIZE=ON
-      - run: cmake --build cpp/build --parallel
-      - run: ctest --test-dir cpp/build --output-on-failure
-
-  cpp-tidy:
-    name: c++ clang-tidy
+  license:
+    name: license copies match
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
-        with:
-          python-version: "3.12"
-      - run: pip install clang-tidy==18.1.8
-      - run: cmake -S cpp -B cpp/build -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DTRAK_BUILD_TESTS=OFF
-      - run: clang-tidy -p cpp/build cpp/src/*.cpp
-
-  cpp-fuzz:
-    name: c++ libFuzzer (short run)
-    runs-on: ubuntu-latest
-    continue-on-error: true
-    steps:
-      - uses: actions/checkout@v5
-      - run: cmake -S cpp -B cpp/build -DCMAKE_CXX_COMPILER=clang++ -DTRAK_BUILD_TESTS=OFF -DTRAK_BUILD_FUZZERS=ON
-      - run: cmake --build cpp/build --target trak_fuzz_reader --parallel
-      # Valid and write vectors share names, so prefix each file with its directory.
-      - run: mkdir -p corpus && for f in conformance/*/*.trak; do cp "$f" "corpus/$(basename "$(dirname "$f")")-$(basename "$f")"; done
-      - run: cpp/build/trak_fuzz_reader -max_total_time=60 -timeout=10 corpus
-
-  cross:
-    name: cross-implementation / ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-    defaults:
-      run:
-        shell: bash
-    steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
-        with:
-          python-version: "3.12"
-      - uses: actions/setup-go@v6
-        with:
-          go-version: stable
-          cache-dependency-path: go/go.sum
-      - uses: actions/setup-node@v5
-        with:
-          node-version: 22
-      - run: pip install -e python
-      - run: cd go && go build -o interop$(go env GOEXE) ./internal/interop
-      - run: cmake -S cpp -B cpp/build -DCMAKE_BUILD_TYPE=Release
-      - run: cmake --build cpp/build --config Release --target trak_interop --parallel
-      - name: Cross-check
-        run: |
-          cpp=cpp/build/trak_interop
-          if [ -f cpp/build/Release/trak_interop.exe ]; then cpp=cpp/build/Release/trak_interop.exe; fi
-          python conformance/crosscheck.py --seeds 200 \
-            --impl python="python python/tests/interop.py" \
-            --impl go=go/interop$(cd go && go env GOEXE) \
-            --impl cpp=$cpp \
-            --reader js="node js/tools/interop.js"
-
-  readme:
-    name: README quickstarts run as written
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
-        with:
-          python-version: "3.12"
-      - uses: actions/setup-go@v6
-        with:
-          go-version: stable
-          cache-dependency-path: go/go.sum
-      - run: python docs/check_readme.py
+      - run: cmp LICENSE go/LICENSE

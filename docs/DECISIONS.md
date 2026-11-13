@@ -1,126 +1,151 @@
 # Decisions
 
-Spec clarifications, and choices the spec leaves to the reference
-implementations.
+Where the trak 1.2 spec was ambiguous or wrong, what was decided, and choices the spec leaves to the reference implementations. The spec handed over on 2026-11-12 was the starting point; SPEC.md now says what these entries decided.
 
-Each entry records the question, the answer and where it was applied.
-1.0.0 was never released. Changes made before the 1.1.0 release are folded
-into 1.1.0.
+**Design changes** are marked: they change what the format can do, not only how it's written down.
 
-## Spec clarifications
+## Format
 
-### D1. Prefix and suffix binding in types (PATCH)
+### D1. The version is 1.2
 
-**Question.** §5 doesn't say how prefixes (`|`, `{}`, `[]`) combine with
-suffixes (`?`, `@name`). Does `[] str?` mean an optional list or a list of
-optional strings?
+The handover called the format "trak 1.1", but v1.1.0 is a tag of the old per-type format. Joel named this one 1.2.0. The magic line is `trak 1.2`. Readers refuse a minor below 2, since 1.0 and 1.1 are a different format, and read newer minors.
 
-**Answer.** A type is `prefix* base suffix*`. Suffixes apply to the whole type
-before them, prefixes included:
+### D2. Nodes are numbered from 1, root first
 
-| Text | Means |
+The spec numbered nodes from 0 with the item first, and gave d = 0, i = 0 the meaning "none". Then a trie node couldn't point at the new item in its own footer, since that pointer is (0, 0).
+
+There was also an ordering problem. A footer's nodes carry no type tags, so a reader lays them out from the path. Each list's trie depth follows from its count, and the count sits in the parent's slot. With the item first, the reader meets trie nodes before it knows how many there are.
+
+So nodes are numbered from 1, root first:
+
+| Pointer | Means |
 |---|---|
-| `[] str?` | `([] str)?`, an optional list |
-| `[] str @x` | `([] str) @x`, an annotation on the list |
-| `\|str @log` | `(\|str) @log`, an annotation on the block leaf |
-| `{} num? @u` | `(({} num)?) @u` |
+| (0, 0) | none |
+| (0, i) | node i of this footer |
+| (d, i) | node i of an earlier append |
 
-A list of optional elements can't be written in 1.0.
+A pointer within a footer always points forward.
 
-**Applied.** A sentence in SPEC.md §5 (Types).
+### D3. Nested objects with event lists have nodes (design change)
 
-### D2. Map keys in paths (PATCH)
+The spec's object node had one slot per event field, which left no way to reach `defaults.watchdog.w1`: `watchdog` is a plain nested object.
 
-**Question.** §4 says paths are ASCII, but §6 copies map keys raw into paths,
-and the conformance suite needs UTF-8 map keys.
+A nested object that contains event lists now gets its own object node and a slot in its parent that points to it. That slot is none until one of its lists first changes. It also gives such an object a version history of its own. Without one, scrubbing `defaults` through its versions would step through every append in the file.
 
-**Answer.** Framing is ASCII except for the map-key segments of paths, which
-are raw bytes like values. No bytes change.
+Nested objects without event lists, such as `setup` or `context`, have no node; their leaves are part of their item's.
 
-**Applied.** The SPEC.md §4 encoding table.
+An optional object can't contain event lists, since a slot can't be absent.
 
-### D3. Map entries with no leaves (PATCH)
+### D4. Version 1 writes the root's leaves
 
-**Question.** A map key appears only in the paths of its entry's leaves. When
-an entry writes no leaves (an empty list or map, an absent optional, an empty
-object), only the key's byte length is stored.
+The spec never appended the root, so leaves of the root, such as Sophie's `version`, had nowhere to be written. Version 1 is now the root append: its path is the root's name, and its only node is the root.
 
-**Answer.** That's allowed. Readers report such a key as unknown (`null`) and
-still give its length. In native trees and `expect.json`, a map is an ordered
-list of `[key, value]` pairs, so unknown keys and file order are both kept.
+### D5. The schema is one header at the start (design change)
 
-**Applied.** A sentence in SPEC.md §6 (Body).
+The spec put the schema in a body followed by a footer, and allowed later schemas that add fields. But nothing pointed at the schema: a reader would have had to scan forward for `##[`, and a `#` description can contain that text.
 
-### D4. Repeated map keys (PATCH)
+The schema is now a header line followed by the text:
 
-**Answer.** Writers reject a map with a repeated key, comparing key bytes. Map
-keys aren't `str` values, so "strings untouched" still holds. Readers and
-`check` don't enforce it.
+```
+##[ schema ]##<text length><root append length><E>…
+```
 
-**Applied.** SPEC.md §10.
+A file has one schema, which never changes. The root append's length is in the header too, so a reader reaches the root's leaves in one read, where a jump walk to version 1 took about 22 reads on the 5 GB file.
 
-### D5. Leading zeros in VLQs (PATCH)
+Adding fields to a schema later is left out of 1.2. It needs a per-append schema reference, about 8 bytes on every append, and nothing in the Sophie demo uses it.
 
-**Answer.** A VLQ never starts with `a` (a leading zero digit). Readers and
-`check` reject one as a format error, so every number has exactly one encoding.
+### D6. A delta's base is a full node (design change)
 
-**Applied.** SPEC.md §4 (Letter VLQ).
+The spec allowed delta chains up to ⌈log₂(v + 1)⌉ + 1 long. That makes reads grow with the file's age, and a 5 GB file has 3.3 million versions.
 
-### D6. `{}` as empty object or map prefix (PATCH)
+A delta's base must now be a full node of the same kind, so any node is at most two reads. check enforces it.
 
-**Answer.** `{}` (whitespace and comments allowed inside) followed by
-something that starts a type (`|`, `{`, `[` or a word) is the map prefix.
-Otherwise it's an empty object, which has no leaves and no VLQs.
+### D7. Full forms carry their entry count
 
-**Applied.** SPEC.md §5 (Types).
+A full trie node at the end of a list is partial. A delta read later may use it as a base, by which time the list has grown, so the reader can't work out the node's size from the count it sees. Every full form is now `0, n, n entries`.
 
-### D7. Event families (MINOR, trak 1.1)
+Slots take the same two forms, with the same form marker. The spec mentioned slot deltas but gave them no marker.
 
-**Question.** Related event types, such as a build and its steps, are separate
-chains. Nothing orders them against each other, and there is no table for the
-whole group.
+### D8. Trie depth is exact
 
-**Answer.** Joel's design, 2026-11-10:
+The spec said "at most ⌈log₁₆ count⌉ + 1 deep", but readers compute the depth from the count, so a writer can't choose it. A list of c items has depth h, the smallest h ≥ 1 with 16^h ≥ c.
 
-- A type named `P.x` in a schema declaring `1.1` is a child of `P`. It lists
-  only its own members; its object is `P`'s members followed by them.
-- An event's extensions hold its position in each enclosing family, root
-  first, one number per level. The number in the event's own family is
-  written only once the type has a child, and is `n` otherwise.
-- Any key that never decreases along a chain can be found by a jump walk in
-  O(log n). Row `m` of a family is then a seek in each of its `k` types, so
-  O(k log n), and a family's row count is its largest number.
-- Timestamps never decrease within a family.
+### D9. The item of a leaf list has an empty node
 
-Files without children are byte-for-byte the same as in 1.0, apart from the
-magic line. 1.0 was never released, so no 1.0 reader has to read 1.1 files.
+A trie entry must point at a node. An item of a leaf list, such as `defaults.model`, has an empty node; its value is its append's body.
 
-**Applied.** SPEC.md §1, §5 (Schema objects), §6 (Family numbers), §7, §10
-and §12. The magic line is now `trak 1.1`.
+### D10. Append references are one VLQ
 
-## Implementation choices
+The version jump and an item's leaves name a whole append, not a node, so they are one VLQ d: 0 is none. d = 1 is the append just before: d counts from the end of the footer to the start of the body that refers to it.
 
-These choices are left to implementations by the spec. The reference libraries
-make them the same way. They change no bytes, so Joel can revisit
-any of them without a spec change.
+### D11. The root node has only slots
 
-| # | Topic | Choice |
+The root's version count, previous version and jump would repeat the footer's own version, the append before it, and the footer's version jump. They are left out, which saves about 20 bytes on every append.
+
+### D12. check verifies every version as a path copy
+
+The spec's bounds ("a footer holds only the nodes on the changed path") can't be checked node by node. check instead re-plans each append from the version before and requires every entry it didn't change to be equal, and every count, version and jump to be what the writer must write. By induction, every version of the tree is right. It runs at about 30,000 appends a second.
+
+### D13. Leaf types and path values
+
+- `path` is a leaf kind. A stored path must name a value that exists before the append: an item, a list, an object or a present leaf. Paths with negative numbers are lookups only.
+- An unknown type name is a schema error. The spec said to read it as `str`, but with one schema per file there are no newer leaf types to meet, and the error catches typos.
+- Event list items can't be optional, and an event list can't hold event lists directly.
+- Descriptions are the comment lines before a type or field, or a comment on the field's first line, joined with spaces.
+
+### D14. Recovery
+
+The last valid footer is the last line that parses, whose body walks, and whose previous footer has the version before it. Its version must also fit in the bytes before it (at least 30 bytes per append): fuzzing found that a forged version number could otherwise make check allocate without bound.
+
+Values can't forge a valid footer anywhere but in a torn tail, where a crafted value could look like a footer.
+
+## Writer policies
+
+### P1. Two policies: reference and delta
+
+- **Reference** writes every node in full.
+- **Delta** writes a trie node or slots as a delta against the full base of its previous version, when that delta is less than half the full form's size. Otherwise it writes the node in full, and that becomes the next base.
+
+The handover suggested a "generations" policy too. It was left out to keep the work on the demo, and because delta already brings footers down to about 260 bytes. See bench/README.md for the comparison.
+
+### P2. sophie-gen sizes by content
+
+`--size` is the size of the file under the reference policy. The generator stops once the bodies reach 73% of it, measured on generated files. So the same seed writes the same content under every policy, and the policies' sizes can be compared directly.
+
+## Viewer
+
+### V1. Joel's layout
+
+- A pane of open files on the left. "+" browses the directory `trak serve` serves; a local file can be read too.
+- Tabs on the right. The first tab is the root as a tree.
+- Right-clicking an event list opens it in a table view or a tree view.
+- The tree view and the table view share one scrollbar, which maps to the whole range.
+- Nested objects start collapsed. Expanding one in a table adds a header row that spans its leaves.
+
+### V2. What a tree view's position means
+
+| View | Position | Shows |
 |---|---|---|
-| I1 | Field paths in schema APIs | List indexes are written `[]` and map keys `{}`, e.g. `jobs.[].env.{}`. |
-| I2 | A leaf's description and annotations | A description that is empty after stripping `//` and whitespace counts as no description. Leaf descriptions and annotations come from the leaf's own field (the nearest enclosing object member). Annotations on the types between that member and the leaf are listed outermost first. Annotations on the top-level object are exposed on the schema. |
-| I3 | A leaf's `optional` flag | True when any type from the root down to the leaf is optional, i.e. the column can be empty. |
-| I4 | Unknown leaves when writing | `define` rejects them: a writer only writes the versions it knows. Readers accept them as `str` (§9). |
-| I5 | Schema versions | A schema footer whose major isn't 1 makes that schema unparseable: the type still navigates, but its values are unavailable. `check` parses `1.0` and `1.1` schemas strictly and a newer minor leniently, and a child of an unparseable parent leniently. |
-| I6 | `check` and torn tails | A torn tail is accepted only if it has no complete footer line. If the bytes ignored by recovery hold a complete but invalid footer line, `check` fails and reports why that footer is invalid. Without this, a corrupt last object would pass as a torn tail. |
-| I7 | `Event.get(path)` with colliding paths | Map keys may contain `.`, so two leaves can share a path. The first one in file order wins. `to_native()` is always unambiguous. |
-| I8 | `flush()` | Writers make one unbuffered `write` per object, so `flush()` calls fsync. |
-| I9 | Schema text | `define` writes the definition exactly as given and adds a final LF if it's missing. |
-| I10 | Python VLQ test range | The 0 to 10⁷ round trip runs in Python when `TRAK_SLOW=1`. Otherwise it runs to 10⁶. Go and C++ always cover 10⁷. |
-| I11 | Lists of empty objects | A list whose element type writes nothing (a required empty object) costs no bytes per element, so a tiny file could claim billions. Readers refuse to decode one with more than 65,536 elements, as a format error. |
-| I12 | Versions written | The magic line is always `trak 1.1`. A schema footer declares `1.1` only for a child type, and `1.0` otherwise, the oldest version its definition needs. |
-| I13 | Dotted names when writing | `define("a.b", …)` fails unless `a` is defined: a writer never writes a dotted name that isn't a child, so a `.` in a name it writes always means a family. Readers still accept dots in `1.0` schemas as plain characters (§5). |
-| I14 | Write positions | `write` returns `(n, offset)`, the offset being where the event's object starts. It is the same as `Event.offset` and is a reader cursor. |
-| I15 | Cursors | `before(c, k)` returns events starting before `c`, newest first; `after(c, k)` those starting after `c`, oldest first. A cursor is valid if it is the magic line's end, the reader's end, or the end of an object that passes the recovery test (§11). `after` seeks each type by offset (§7, Seek) and walks back from the earliest end of any type's `k`-th event after `c`. |
-| I16 | Directory sync | With `sync`, `create` fsyncs the file's directory after writing the magic line, so the new file survives a crash. It does nothing on Windows. |
-| I17 | Large VLQs in JavaScript | The JavaScript reader rejects a VLQ above 2^53 as a format error, since a JavaScript number can't hold it exactly. No real file has lengths or offsets that large. |
-| I18 | Extensions after the family numbers | Readers and `check` skip them (§9). `check` requires the family numbers themselves to be exact. |
+| `items:LIST@n` | item n | The object that owns the list, as it was right after item n was appended, with item n open |
+| `tree:PATH@k` | the object's own version k | That object at version k. For the root, these are the file's versions. |
+
+Highlighted fields are the ones that changed since the last position. Every leaf links to the append that wrote it.
+
+### V3. One request per page
+
+The JS reader batches every block wanted in one turn of the event loop into one request to `trak serve`'s read endpoint: `GET api/read?path=P&r=off+len,…`, answered with the ranges concatenated.
+
+Standard multi-range requests would do the same, but proxies such as a Cloudflare tunnel may not pass them through, and could answer a multi-range request with the whole 5 GB. A plain Range source is still there for any static server.
+
+### V4. URLs
+
+Every view has a URL: `#f=FILE&v=SPEC`.
+
+- Opening a view adds a history entry.
+- Moving within a view replaces the current entry, so back and forward step between views.
+
+## Limits
+
+- JS readers refuse VLQs of 2^53 or more: offsets are JavaScript numbers.
+- One read request is at most 256 ranges and 64 MB.
+- An object has at most 64 slots.

@@ -2,7 +2,6 @@ package trak
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -505,8 +504,6 @@ func (f *File) Get(path string, v uint64) (any, error) {
 	}
 	return root.Get(path)
 }
-
-var errNoRoot = errors.New("trak: the file has no root append")
 
 func bitsTrailing(x uint64) int {
 	n := 0

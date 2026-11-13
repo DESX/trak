@@ -1,16 +1,10 @@
-.venv/
-__pycache__/
-*.egg-info/
-.coverage
-.mypy_cache/
-.ruff_cache/
-.pytest_cache/
 dist/
-build/
-/cpp/build*/
+node_modules/
 /go/trak
 /go/cmd/trak/trak
-/bench/out/
-/go/interop
-/go/interop.exe
-/go/bench.trak
+/go/cmd/sophie-gen/sophie-gen
+/viewer/test/out/
+/viewer/test/perf.json
+# Generated files are test data: commit the generator and its seeds, not them.
+/*.trak
+/go/*.trak

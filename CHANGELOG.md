@@ -8,6 +8,35 @@ The spec and the libraries share one version number.
 
 ## [Unreleased]
 
+## [1.2.0] - Unreleased
+
+A new format: trak 1.2 holds one versioned tree, not a table per type. It
+doesn't read or write 1.0 or 1.1 files, and the libraries that did are gone.
+
+### Added
+
+- **SPEC.md**, trak 1.2: one root object whose event lists are append-only, every
+  append a full version written by path copying, any field of any version in
+  O(log n) reads. [docs/DECISIONS.md](docs/DECISIONS.md) records where it differs
+  from the draft it started from.
+- **Go**: writer with two policies (reference and delta), reader, and check, which
+  verifies every version as an exact path copy of the one before.
+- **JavaScript reader** over memory, `File`, HTTP Range and `trak serve`, batching
+  every read in one turn of the event loop into one request.
+- **sophie-gen**: synthetic logs of [Sophie](docs/sophie.md) at any size, from a
+  seed and a policy.
+- **trak serve** and a new viewer: a pane of open files, and tabs of tree, table
+  and log views. Every view has a URL, and a debug panel lists every byte range
+  read.
+- Conformance vectors, written by the Go tests and read by the Go and JS tests.
+- A browser test that times the viewer's responsiveness targets on each file, and
+  bench/README.md with the policy comparison.
+
+### Removed
+
+- The Python and C++ libraries, the 1.1 JavaScript reader and viewer, families,
+  lists and maps as values, and `@` annotations.
+
 ## [1.1.0] - 2026-11-10
 
 The first release. Version 1.0.0 was never released; its changes are folded in
