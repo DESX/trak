@@ -1,2 +1,0 @@
-t 2 is earlier than t 1
-offset: 71

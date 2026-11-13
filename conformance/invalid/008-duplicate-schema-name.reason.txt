@@ -1,2 +1,0 @@
-type name a is defined twice
-offset: 66

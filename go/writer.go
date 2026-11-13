@@ -2,432 +2,504 @@ package trak
 
 import (
 	"fmt"
-	"io"
+	"math"
 	"os"
-	"strings"
+	"strconv"
 	"time"
 )
 
-const (
-	magic = "trak 1.1\n"
-	// Schema footers declare the oldest version their definition needs: 1.1
-	// for a child type.
-	writeVersion = "1.0"
-	childVersion = "1.1"
-	unset        = -(1 << 62)
-)
-
-// Options configures a Writer.
+// Options configure a Writer.
 type Options struct {
-	// Overwrite lets Create replace an existing file.
-	Overwrite bool
-	// Sync calls fsync after each object. Create also syncs the file's
-	// directory after writing the magic line, where the platform allows it.
-	Sync bool
+	Policy Policy
+	Sync   bool // fsync after every append, and the directory on create
 }
 
-// syncDirFunc is syncDir, replaceable in tests.
-var syncDirFunc = syncDir
-
-// Pos is where an event was written: its number in its type, and its
-// object's start offset (the same as Event.Offset, usable as a cursor for
-// Reader.Before and Reader.After).
-type Pos struct {
-	N      int64
-	Offset int64
-}
-
-type spineNode struct {
-	node uint64
-	end  int64
-}
-
-type typeState struct {
-	schema *Schema
-	n      uint64
-	// spine holds node n, J(n), J(J(n)), ..., 0 with the latest last.
-	spine []spineNode
-	// The latest timestamp in this type's family; only the root's is used.
-	lastMs int64
-	hasTs  bool
-	// The type's families, root first, ending with this type.
-	lineage []*typeState
-	// Events in this type's family so far.
-	familyCount uint64
-	hasChild    bool
-}
-
-func newTypeState(schema *Schema, end int64, parent *typeState) *typeState {
-	t := &typeState{schema: schema, spine: []spineNode{{0, end}}}
-	if parent != nil {
-		t.lineage = append(t.lineage, parent.lineage...)
-		parent.hasChild = true
-	}
-	t.lineage = append(t.lineage, t)
-	return t
-}
-
-// Writer appends schemas and events to a trak file. It holds an exclusive
-// advisory lock on the file until Close.
+// Writer appends to a trak file. It holds the file's lock until Close. It is
+// safe for one goroutine at a time.
 type Writer struct {
-	file          *os.File
-	sync          bool
-	offset        int64
-	types         map[string]*typeState
-	order         []*typeState
-	lastSchemaEnd int64
-	cov           []int64
-	seq           int64
-	buf           []byte
-	enc           encoder
-	stamp         []byte
-	now           func() time.Time
+	f       *File
+	fh      *os.File
+	opt     Options
+	buf     []byte
+	body    []byte
+	lens    []byte
+	scratch []byte
 }
 
-// Create creates a new trak file and writes its magic line. It fails if the
-// file exists, unless opts.Overwrite is set.
-func Create(path string, opts Options) (*Writer, error) {
-	flags := os.O_RDWR | os.O_CREATE
-	if !opts.Overwrite {
-		flags |= os.O_EXCL
-	}
-	f, err := os.OpenFile(path, flags, 0o666)
+// Create creates a new file with the schema and writes version 1, the root's
+// leaves.
+func Create(name, schema string, root map[string]any, t time.Time, opt *Options) (*Writer, error) {
+	s, err := ParseSchema(schema)
 	if err != nil {
 		return nil, err
 	}
-	w := newWriter(f, opts)
-	if err := lockFile(f); err != nil {
-		f.Close()
+	if len(schema) == 0 || schema[len(schema)-1] != '\n' {
+		return nil, &SchemaError{Msg: "the schema text must end with LF"}
+	}
+	fh, err := os.OpenFile(name, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0o644)
+	if err != nil {
 		return nil, err
 	}
-	if err := f.Truncate(0); err != nil {
-		f.Close()
+	w := &Writer{fh: fh}
+	if opt != nil {
+		w.opt = *opt
+	}
+	fail := func(err error) (*Writer, error) {
+		fh.Close()
+		os.Remove(name)
 		return nil, err
 	}
-	if err := w.writeObject([]byte(magic)); err != nil {
-		f.Close()
+	if err := lockFile(fh); err != nil {
+		return fail(err)
+	}
+	head := []byte(Magic + "##[ schema ]##")
+	head = AppendVLQ(head, uint64(len(schema)))
+	head = append(AppendVLQ(head, 0), '\n')
+	head = append(head, schema...)
+	// A File over just the header, so the root append can be planned.
+	w.f = &File{r: fh, schema: s, schemaEnd: int64(len(head)), size: int64(len(head)), cache: newFooterCache(1 << 14)}
+	p := planRoot(s)
+	rec, err := w.encode(p, root, t, int64(len(head)))
+	if err != nil {
+		return fail(err)
+	}
+	if _, err := fh.Write(append(head, rec...)); err != nil {
+		return fail(err)
+	}
+	if err := w.committed(int64(len(head) + len(rec))); err != nil {
+		return fail(err)
+	}
+	if w.opt.Sync {
+		if err := syncDir(name); err != nil {
+			return fail(err)
+		}
+	}
+	return w, nil
+}
+
+// OpenWriter opens an existing file for appending. A torn tail is truncated.
+func OpenWriter(name string, opt *Options) (*Writer, error) {
+	fh, err := os.OpenFile(name, os.O_RDWR, 0)
+	if err != nil {
 		return nil, err
 	}
-	if opts.Sync {
-		if err := syncDirFunc(path); err != nil {
-			f.Close()
+	if err := lockFile(fh); err != nil {
+		fh.Close()
+		return nil, err
+	}
+	st, err := fh.Stat()
+	if err != nil {
+		fh.Close()
+		return nil, err
+	}
+	f, err := NewFile(fh, st.Size())
+	if err != nil {
+		fh.Close()
+		return nil, err
+	}
+	if f.latest == nil {
+		fh.Close()
+		return nil, formatErr(f.schemaEnd, "the file has no root append")
+	}
+	if f.size < st.Size() {
+		if err := fh.Truncate(f.size); err != nil {
+			fh.Close()
 			return nil, err
 		}
 	}
-	return w, nil
-}
-
-// OpenAppend opens an existing trak file for appending. A torn tail (SPEC §11)
-// is truncated.
-func OpenAppend(path string, opts Options) (*Writer, error) {
-	f, err := os.OpenFile(path, os.O_RDWR, 0o666)
-	if err != nil {
-		return nil, err
-	}
-	w := newWriter(f, opts)
-	if err := lockFile(f); err != nil {
-		f.Close()
-		return nil, err
-	}
-	st, err := f.Stat()
-	if err == nil && st.Size() == 0 {
-		err = w.writeObject([]byte(magic))
-	} else if err == nil {
-		err = w.restore(path, st.Size())
-	}
-	if err != nil {
-		f.Close()
-		return nil, err
+	w := &Writer{f: f, fh: fh}
+	if opt != nil {
+		w.opt = *opt
 	}
 	return w, nil
 }
 
-func newWriter(f *os.File, opts Options) *Writer {
-	return &Writer{file: f, sync: opts.Sync, types: map[string]*typeState{}, cov: []int64{-1}, now: time.Now}
-}
-
-// Flush makes written objects durable with fsync. Objects are handed to the
-// OS as they are written, one write call each.
-func (w *Writer) Flush() error {
-	if w.file == nil {
-		return ErrClosed
-	}
-	return w.file.Sync()
-}
+// File returns a reader that sees every append written so far.
+func (w *Writer) File() *File { return w.f }
 
 // Close releases the lock and closes the file.
 func (w *Writer) Close() error {
-	if w.file == nil {
-		return nil
-	}
-	err := w.file.Close()
-	w.file = nil
-	return err
-}
-
-func (w *Writer) writeObject(data []byte) error {
-	if w.file == nil {
+	if w.fh == nil {
 		return ErrClosed
 	}
-	n, err := w.file.WriteAt(data, w.offset)
-	w.offset += int64(n)
-	if err != nil {
-		return err
-	}
-	if w.sync {
-		return w.file.Sync()
-	}
-	return nil
-}
-
-// Types returns the defined schemas in index order.
-func (w *Writer) Types() []*Schema {
-	out := make([]*Schema, len(w.order))
-	for i, t := range w.order {
-		out[i] = t.schema
-	}
-	return out
-}
-
-// Define parses and validates a definition, then writes its schema object.
-// A final LF is added if the definition lacks one.
-func (w *Writer) Define(name, definition string) (*Schema, error) {
-	if !validTypeName(name) {
-		return nil, &SchemaError{Msg: fmt.Sprintf("bad type name %q", name)}
-	}
-	if strings.HasPrefix(name, "trak.") {
-		return nil, &SchemaError{Msg: "type names starting with 'trak.' are reserved"}
-	}
-	if w.types[name] != nil {
-		return nil, &SchemaError{Msg: fmt.Sprintf("type %q is already defined", name)}
-	}
-	var parent *typeState
-	version := writeVersion
-	if i := strings.LastIndexByte(name, '.'); i >= 0 {
-		if parent = w.types[name[:i]]; parent == nil {
-			return nil, &SchemaError{Msg: fmt.Sprintf("define '%s' before its child '%s'", name[:i], name)}
-		}
-		version = childVersion
-	}
-	if !strings.HasSuffix(definition, "\n") {
-		definition += "\n"
-	}
-	index := len(w.order) + 1
-	types := make(map[string]*Schema, len(w.types))
-	for n, t := range w.types {
-		types[n] = t.schema
-	}
-	schema, err := buildSchema(name, index, version, definition, true, types)
-	if err != nil {
-		return nil, err
-	}
-	start := w.offset
-	var prev uint64
-	if len(w.order) > 0 {
-		prev = uint64(start - w.lastSchemaEnd + 1)
-	}
-	obj := append(w.buf[:0], definition...)
-	obj = appendSchemaFooter(obj, name, index, version, []uint64{uint64(len(definition)), prev, 0})
-	w.buf = obj
-	if err := w.writeObject(obj); err != nil {
-		return nil, err
-	}
-	w.lastSchemaEnd = w.offset
-	t := newTypeState(schema, w.offset, parent)
-	w.types[name] = t
-	w.order = append(w.order, t)
-	w.cov = append(w.cov, -1)
-	return schema, nil
-}
-
-// Write writes one event timestamped now and returns its position. If now is
-// earlier than the last timestamp in the type's family, that timestamp is
-// reused.
-func (w *Writer) Write(typ string, value any) (Pos, error) {
-	return w.write(typ, value, time.Time{}, false)
-}
-
-// WriteAt writes one event with the given timestamp, truncated to the
-// millisecond, and returns its position. A timestamp earlier than the last
-// one in the type's family is an error.
-func (w *Writer) WriteAt(typ string, value any, ts time.Time) (Pos, error) {
-	return w.write(typ, value, ts, true)
-}
-
-func (w *Writer) write(typ string, value any, ts time.Time, explicit bool) (Pos, error) {
-	t := w.types[typ]
-	if t == nil {
-		return Pos{}, valueErr("type %q is not defined", typ)
-	}
-	if t.schema.Root == nil {
-		return Pos{}, &SchemaError{Msg: fmt.Sprintf("can't write %s: %v", typ, t.schema.Err)}
-	}
-	root := t.lineage[0]
-	var ms int64
-	if explicit {
-		ms = toMillis(ts)
-		if root.hasTs && ms < root.lastMs {
-			return Pos{}, valueErr("timestamp %s is earlier than the last event in family %s",
-				FormatTimestamp(fromMillis(ms)), root.schema.Name)
-		}
-	} else {
-		ms = toMillis(w.now())
-		if root.hasTs && ms < root.lastMs {
-			ms = root.lastMs
-		}
-	}
-	if err := w.enc.encode(t.schema.Root, value); err != nil {
-		return Pos{}, err
-	}
-	body, values := w.enc.body, w.enc.vals
-	n := t.n + 1
-	j := Jump(n)
-	start := w.offset
-	stepEnd := t.spine[len(t.spine)-1].end
-	var jumpEnd int64
-	for i := len(t.spine) - 1; i >= 0; i-- {
-		if t.spine[i].node == j {
-			jumpEnd = t.spine[i].end
-			break
-		}
-	}
-	index := t.schema.Index
-	best := -1
-	for i, c := range w.cov {
-		if i != index && (best < 0 || c < w.cov[best]) {
-			best = i
-		}
-	}
-	dirEnd := w.lastSchemaEnd
-	if best > 0 {
-		s := w.order[best-1].spine
-		dirEnd = s[len(s)-1].end
-	}
-	// Family numbers: one per ancestor, then the type's own once it has a child.
-	families := t.lineage
-	if !t.hasChild {
-		families = families[:len(families)-1]
-	}
-	vlqs := make([]uint64, 0, 6+len(families)+len(values))
-	vlqs = append(vlqs, uint64(len(body)), uint64(start-stepEnd+1), uint64(start-jumpEnd+1),
-		uint64(start-dirEnd+1), uint64(best), uint64(len(families)))
-	for _, a := range families {
-		vlqs = append(vlqs, a.familyCount+1)
-	}
-	vlqs = append(vlqs, values...)
-	obj := append(w.buf[:0], body...)
-	w.stamp = appendStamp(w.stamp[:0], ms)
-	obj = appendEventFooter(obj, typ, n, w.stamp, vlqs)
-	w.buf = obj
-	if err := w.writeObject(obj); err != nil {
-		return Pos{}, err
-	}
-	for t.spine[len(t.spine)-1].node > j {
-		t.spine = t.spine[:len(t.spine)-1]
-	}
-	t.spine = append(t.spine, spineNode{n, w.offset})
-	t.n = n
-	root.lastMs, root.hasTs = ms, true
-	for _, a := range t.lineage {
-		a.familyCount++
-	}
-	w.cov[index], w.cov[best] = w.seq, w.seq
-	w.seq++
-	return Pos{N: int64(n), Offset: start}, nil
-}
-
-func (w *Writer) restore(path string, size int64) error {
-	r, err := Open(path)
-	if err != nil {
-		return err
-	}
-	end := r.End()
-	err = w.restoreFrom(r)
-	// Close before truncating: Windows can't truncate a mapped file.
-	if cerr := r.Close(); err == nil {
-		err = cerr
-	}
-	if err != nil {
-		return err
-	}
-	if end < size {
-		if err := w.file.Truncate(end); err != nil {
-			return err
-		}
-	}
-	w.offset = end
-	return nil
-}
-
-func (w *Writer) restoreFrom(r *Reader) error {
-	for _, sf := range r.schemaFts {
-		schema := r.byName[sf.name]
-		var parent *typeState
-		if schema.Parent != "" {
-			if parent = w.types[schema.Parent]; parent == nil {
-				return formatErr(sf.fstart, "schema %s comes before its parent %s", sf.name, schema.Parent)
-			}
-		}
-		t := newTypeState(schema, sf.end, parent)
-		w.types[sf.name] = t
-		w.order = append(w.order, t)
-		w.lastSchemaEnd = sf.end
-	}
-	for _, t := range w.order {
-		top, err := r.latestFooter(t.schema)
-		if err != nil {
-			return err
-		}
-		spine := []spineNode{{top.node(), top.end}}
-		for f := top; f.node() > 0; {
-			if f, err = r.navigate(f, Jump(f.node())); err != nil {
-				return err
-			}
-			spine = append(spine, spineNode{f.node(), f.end})
-		}
-		for i, j := 0, len(spine)-1; i < j; i, j = i+1, j-1 {
-			spine[i], spine[j] = spine[j], spine[i]
-		}
-		t.spine, t.n = spine, top.node()
-		if !top.schema {
-			// A family's latest event has its latest timestamp and largest numbers.
-			for _, a := range t.lineage {
-				num, err := r.familyNumber(top, a.schema.Name)
-				if err != nil {
-					return err
-				}
-				a.familyCount = max(a.familyCount, uint64(num))
-			}
-			ts, err := ParseTimestamp(top.stamp)
-			if err != nil {
-				return formatErr(top.fstart, "%v", err)
-			}
-			root := t.lineage[0]
-			if ms := toMillis(ts); !root.hasTs || ms > root.lastMs {
-				root.lastMs, root.hasTs = ms, true
-			}
-		}
-	}
-	// Rebuild coverage approximately from the last ~2K events.
-	w.cov = make([]int64, len(w.order)+1)
-	for i := range w.cov {
-		w.cov[i] = unset
-	}
-	f, err := r.last()
-	seq := int64(-1)
-	for budget := 2*len(w.order) + 2; err == nil && f != nil && budget > 0; f, err = r.prev(f) {
-		if f.schema {
-			continue
-		}
-		for _, i := range []uint64{uint64(w.types[f.name].schema.Index), f.vlqs[4]} {
-			if i < uint64(len(w.cov)) && w.cov[i] == unset {
-				w.cov[i] = seq
-			}
-		}
-		seq--
-		budget--
-	}
+	err := w.fh.Close()
+	w.fh = nil
 	return err
 }
 
-var _ io.Closer = (*Writer)(nil)
+// Append adds one item to the event list at list (such as
+// "sessions.12.turns") and returns the append. Object items are
+// map[string]any, with nested maps for nested objects; leaves are strings,
+// []byte, or numbers for num.
+func (w *Writer) Append(list string, value any, t time.Time) (Append, error) {
+	if w.fh == nil {
+		return Append{}, ErrClosed
+	}
+	p, err := w.f.planAppend(w.f.latest, segments(list))
+	if err != nil {
+		return Append{}, err
+	}
+	start := w.f.size
+	rec, err := w.encode(p, value, t, start)
+	if err != nil {
+		return Append{}, err
+	}
+	if _, err := w.fh.WriteAt(rec, start); err != nil {
+		return Append{}, err
+	}
+	if err := w.committed(start + int64(len(rec))); err != nil {
+		return Append{}, err
+	}
+	return w.f.latest.info(), nil
+}
+
+// committed makes the append ending at end the latest.
+func (w *Writer) committed(end int64) error {
+	if w.opt.Sync {
+		if err := w.fh.Sync(); err != nil {
+			return err
+		}
+	}
+	ft, err := w.f.footer(end)
+	if err != nil {
+		return fmt.Errorf("trak: the writer wrote an unreadable footer: %w", err)
+	}
+	w.f.latest, w.f.size = ft, end
+	return nil
+}
+
+// encode builds the body and footer of an append whose body starts at start.
+func (w *Writer) encode(p *plan, value any, t time.Time, start int64) ([]byte, error) {
+	var v uint64 = 1
+	var vjump int64
+	if w.f.latest != nil {
+		prev := w.f.latest
+		v = prev.version + 1
+		ms := t.UnixMilli()
+		if ms < prev.ms {
+			return nil, valueErr("timestamp %s is before the latest append's %s", FormatTimestamp(t), prev.stamp)
+		}
+		jv := Jump(v)
+		switch {
+		case jv == 0:
+		case jv == prev.version:
+			vjump = prev.end
+		default:
+			ft, err := w.f.footerAt(jv)
+			if err != nil {
+				return nil, err
+			}
+			vjump = ft.end
+		}
+	}
+	w.body, w.lens = w.body[:0], w.lens[:0]
+	var err error
+	if p.item.Kind == KindObject {
+		m, ok := value.(map[string]any)
+		if !ok && value != nil {
+			return nil, valueErr("%s needs a map[string]any, not %T", joinSegs(p.segs), value)
+		}
+		err = w.object(p.item.Type, m, "")
+	} else {
+		err = w.leaf(p.item, p.item.Name, value)
+	}
+	if err != nil {
+		return nil, err
+	}
+	b := append(w.buf[:0], w.body...)
+	bodyLen := len(b)
+	b = append(b, "==[ "...)
+	for i, s := range p.segs {
+		if i > 0 {
+			b = append(b, '.')
+		}
+		b = append(b, s...)
+	}
+	b = append(b, ' ')
+	b = strconv.AppendUint(b, v, 10)
+	b = append(b, ' ')
+	b = appendStamp(b, t.UnixMilli())
+	b = append(b, " ]=="...)
+	b = AppendVLQ(b, uint64(bodyLen))
+	b = appendRef(b, start, vjump)
+	b = append(b, 'A') // no extensions
+	b = append(b, w.lens...)
+	for i := range p.nodes {
+		b = w.node(b, &p.nodes[i], start)
+	}
+	b = append(b, '\n')
+	w.buf = b
+	return b, nil
+}
+
+// node appends one node in the policy's form.
+func (w *Writer) node(b []byte, n *planNode, start int64) []byte {
+	switch n.kind {
+	case nodeLeafItem:
+		return b
+	case nodeItem, nodeNested:
+		b = AppendVLQ(b, n.k)
+		b = appendPtr(b, start, n.prev)
+		b = appendPtr(b, start, n.jump)
+		if n.kind == nodeItem {
+			if n.leaves == selfEnd {
+				b = AppendVLQ(b, 0)
+			} else {
+				b = appendRef(b, start, n.leaves)
+			}
+		}
+	}
+	full := w.form(w.scratch[:0], n, start, nil, 0)
+	if w.opt.Policy == Delta && n.old != nil {
+		base, baseRef := n.old, n.oldRef
+		if !base.full {
+			baseRef = base.base
+			var err error
+			if base, _, err = w.f.resolve(baseRef); err != nil {
+				base = nil
+			}
+		}
+		if base != nil && base.full {
+			var bitmap uint64
+			for j, e := range n.entries {
+				be, _ := base.written(j)
+				if e != be {
+					bitmap |= 1 << uint(j)
+				}
+			}
+			if bitmap != 0 {
+				delta := w.form(full[len(full):], n, start, &baseRef, bitmap)
+				if 2*len(delta) < len(full) {
+					w.scratch = full
+					return append(b, delta...)
+				}
+			}
+		}
+	}
+	w.scratch = full
+	return append(b, full...)
+}
+
+// form appends n's entries, in full form, or as a delta when base is set.
+func (w *Writer) form(b []byte, n *planNode, start int64, base *ref, bitmap uint64) []byte {
+	one := func(j int) {
+		e := n.entries[j]
+		if n.kind != nodeTrie && n.typ.slots[j].Kind == KindEvent {
+			b = AppendVLQ(b, e.count)
+		}
+		b = appendPtr(b, start, e.ptr)
+	}
+	if base == nil {
+		b = AppendVLQ(AppendVLQ(b, 0), uint64(len(n.entries)))
+		for j := range n.entries {
+			one(j)
+		}
+		return b
+	}
+	b = appendPtr(AppendVLQ(b, 1), start, *base)
+	b = AppendVLQ(b, bitmap)
+	for bm := bitmap; bm != 0; bm &= bm - 1 {
+		one(bitsTrailing(bm))
+	}
+	return b
+}
+
+// object encodes an object's leaves, depth first.
+func (w *Writer) object(t *Type, m map[string]any, prefix string) error {
+	used := 0
+	for _, fld := range t.Fields {
+		val, has := m[fld.Name]
+		if has {
+			used++
+		}
+		if has && val == nil {
+			has = false
+		}
+		rel := prefix + fld.Name
+		switch {
+		case fld.Kind == KindEvent:
+			if has {
+				return valueErr("%s is an event list; append its items separately", rel)
+			}
+		case fld.Kind == KindObject:
+			if !has {
+				if fld.Optional {
+					w.lens = AppendVLQ(w.lens, 0)
+					continue
+				}
+				if len(fld.Type.Fields) > 0 && !onlyEvents(fld.Type) {
+					return valueErr("%s is missing", rel)
+				}
+			}
+			sub, ok := val.(map[string]any)
+			if has && !ok {
+				return valueErr("%s needs a map[string]any, not %T", rel, val)
+			}
+			if fld.Optional {
+				w.lens = AppendVLQ(w.lens, 1)
+			}
+			if err := w.object(fld.Type, sub, rel+"."); err != nil {
+				return err
+			}
+		case !has:
+			if !fld.Optional {
+				return valueErr("%s is missing", rel)
+			}
+			w.lens = AppendVLQ(w.lens, 0)
+		default:
+			if err := w.leaf(fld, rel, val); err != nil {
+				return err
+			}
+		}
+	}
+	if used < len(m) {
+		for k := range m {
+			if t.Field(k) == nil {
+				return valueErr("no field %s%s", prefix, k)
+			}
+		}
+	}
+	return nil
+}
+
+func onlyEvents(t *Type) bool {
+	for _, f := range t.Fields {
+		if f.Kind != KindEvent && (f.Kind != KindObject || !onlyEvents(f.Type)) {
+			return false
+		}
+	}
+	return true
+}
+
+// leaf encodes one present leaf.
+func (w *Writer) leaf(fld *Field, rel string, val any) error {
+	var s []byte
+	switch x := val.(type) {
+	case string:
+		s = []byte(x)
+	case []byte:
+		s = x
+	case int:
+		s = strconv.AppendInt(nil, int64(x), 10)
+	case int64:
+		s = strconv.AppendInt(nil, x, 10)
+	case uint64:
+		s = strconv.AppendUint(nil, x, 10)
+	case float64:
+		if math.IsNaN(x) || math.IsInf(x, 0) {
+			return valueErr("%s: %v is not a num", rel, x)
+		}
+		s = strconv.AppendFloat(nil, x, 'g', -1, 64)
+	case nil:
+		return valueErr("%s is missing", rel)
+	default:
+		return valueErr("%s: can't write a %T", rel, val)
+	}
+	if fld.Kind != KindNum {
+		if _, ok := val.(string); !ok {
+			if _, ok := val.([]byte); !ok {
+				return valueErr("%s is a %s, not a number", rel, fld.Kind)
+			}
+		}
+	}
+	switch fld.Kind {
+	case KindNum:
+		if !ValidNum(s) {
+			return valueErr("%s: %q is not a num", rel, s)
+		}
+	case KindEnum:
+		ok := false
+		for _, word := range fld.Words {
+			if string(s) == word {
+				ok = true
+				break
+			}
+		}
+		if !ok {
+			return valueErr("%s: %q is not one of %v", rel, s, fld.Words)
+		}
+	case KindPath:
+		if err := w.checkPath(string(s)); err != nil {
+			return valueErr("%s: %v", rel, err)
+		}
+	}
+	if fld.Optional {
+		w.lens = AppendVLQ(w.lens, 1)
+	}
+	w.lens = AppendVLQ(w.lens, uint64(len(s)))
+	if fld.Block {
+		w.body = append(w.body, "--[ "...)
+		w.body = append(w.body, rel...)
+		w.body = append(w.body, " ]--\n"...)
+		w.body = append(w.body, s...)
+		w.body = append(w.body, "\n--[ /"...)
+		w.body = append(w.body, rel...)
+		w.body = append(w.body, " ]--\n"...)
+	} else {
+		w.body = append(w.body, rel...)
+		w.body = append(w.body, ": "...)
+		w.body = append(w.body, s...)
+		w.body = append(w.body, '\n')
+	}
+	return nil
+}
+
+// checkPath requires a stored path to name a value that exists.
+func (w *Writer) checkPath(p string) error {
+	segs := segments(p)
+	if len(segs) == 0 {
+		return fmt.Errorf("empty path")
+	}
+	for _, s := range segs {
+		if !IsName(s) && !isIndex(s) {
+			return fmt.Errorf("bad path %q", p)
+		}
+	}
+	if w.f.latest == nil {
+		return fmt.Errorf("path %s: nothing exists yet", p)
+	}
+	v, err := w.f.rootOf(w.f.latest).Get(p)
+	if err != nil {
+		return err
+	}
+	if l, ok := v.(Leaf); ok && !l.Present {
+		return fmt.Errorf("path %s names an absent value", p)
+	}
+	return nil
+}
+
+// ValidNum reports whether s matches the num grammar (SPEC §2).
+func ValidNum(s []byte) bool {
+	i := 0
+	if i < len(s) && s[i] == '-' {
+		i++
+	}
+	digits := func() int {
+		j := i
+		for i < len(s) && s[i] >= '0' && s[i] <= '9' {
+			i++
+		}
+		return i - j
+	}
+	if i < len(s) && s[i] == '0' {
+		i++
+	} else if digits() == 0 {
+		return false
+	}
+	if i < len(s) && s[i] == '.' {
+		i++
+		if digits() == 0 {
+			return false
+		}
+	}
+	if i < len(s) && (s[i] == 'e' || s[i] == 'E') {
+		i++
+		if i < len(s) && (s[i] == '+' || s[i] == '-') {
+			i++
+		}
+		if digits() == 0 {
+			return false
+		}
+	}
+	return i == len(s)
+}

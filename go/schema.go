@@ -2,589 +2,482 @@ package trak
 
 import (
 	"fmt"
-	"sort"
 	"strings"
 )
 
-// Kind is the kind of a type node.
-type Kind int
+// Kind is what a field holds (SPEC §1).
+type Kind uint8
 
 const (
-	KindStr Kind = iota
-	KindNum
-	KindEnum
-	KindObject
-	KindList
-	KindMap
+	KindStr    Kind = iota // str, or |str when Field.Block is set
+	KindNum                // num
+	KindEnum               // enum(a, b, …)
+	KindPath               // path
+	KindObject             // a nested object, named or inline
+	KindEvent              // event T
 )
 
 func (k Kind) String() string {
-	return [...]string{"str", "num", "enum", "object", "list", "map"}[k]
+	return [...]string{"str", "num", "enum", "path", "object", "event"}[k]
 }
 
-// Annotation is @Name or @Name(Text).
-type Annotation struct {
-	Name    string
-	Text    string
-	HasText bool
-}
-
-func (a Annotation) String() string {
-	if a.HasText {
-		return "@" + a.Name + "(" + a.Text + ")"
-	}
-	return "@" + a.Name
-}
-
-// Type is a node of a schema's type tree. Suffixes (? and annotations) apply
-// to the node they follow, including its prefixes (D1).
-type Type struct {
-	Kind        Kind
-	Optional    bool
-	Annotations []Annotation
-	// Leaves.
-	Words   []string // enum words
-	Block   bool
-	Unknown string // original text of an unknown leaf, read as str
-	// Objects.
-	Members []Member
-	// Lists and maps: the element or value type.
-	Elem *Type
-}
-
-// IsLeaf reports whether t is str, num or enum.
-func (t *Type) IsLeaf() bool { return t.Kind <= KindEnum }
-
-// Member is one key: type entry of an object.
-type Member struct {
-	Key         string
-	Type        *Type
-	Description string
-	line, pos   int
-}
-
-// Field is a leaf column of a type. Path writes list indexes as [] and map
-// keys as {}, e.g. "tags.[]". Optional is true when any type from the root to
-// the leaf is optional. Annotations and Description come from the leaf's own
-// field, the nearest enclosing object member, outermost annotation first.
+// Field is one member of an object type.
 type Field struct {
-	Path        string
-	Type        string // "str", "num" or "enum"
-	Enum        []string
-	Unknown     string
-	Block       bool
-	Optional    bool
-	Annotations []Annotation
-	Description string
+	Name     string
+	Desc     string
+	Kind     Kind
+	Block    bool     // |str
+	Optional bool     // T?
+	Words    []string // enum words
+	Type     *Type    // Object: its type; Event of objects: the item type
+	Item     *Field   // Event: the item, named like the list
 }
 
-// Schema is a type's schema. Root is nil when the definition can't be parsed;
-// Err then says why.
-//
-// A child type (build.step in a schema declaring 1.1 or later) has its
-// parent's name in Parent, and its Root and Fields start with the parent's.
-// Lineage names the type's families, root first and the type itself last
-// (SPEC §5, §6).
+// IsLeaf reports whether the field holds a single value.
+func (f *Field) IsLeaf() bool { return f.Kind < KindObject }
+
+// Type is an object type. Inline objects have an empty Name.
+type Type struct {
+	Name   string
+	Desc   string
+	Fields []*Field
+
+	slots  []*Field // event fields and nested objects that contain event lists
+	events bool     // the type contains an event list, directly or in a nested object
+}
+
+// Field returns the named field, or nil.
+func (t *Type) Field(name string) *Field {
+	for _, f := range t.Fields {
+		if f.Name == name {
+			return f
+		}
+	}
+	return nil
+}
+
+// Slots returns the fields that have a slot in this type's object node: event
+// fields and nested objects that contain event lists, in schema order.
+func (t *Type) Slots() []*Field { return t.slots }
+
+func (t *Type) slot(name string) int {
+	for i, f := range t.slots {
+		if f.Name == name {
+			return i
+		}
+	}
+	return -1
+}
+
+// HasEvents reports whether objects of this type have an object node.
+func (t *Type) HasEvents() bool { return t.events }
+
+// Schema is a parsed schema (SPEC §2).
 type Schema struct {
-	Name        string
-	Index       int
-	Version     string
-	Text        string
-	Description string
-	Root        *Type
-	Fields      []Field
-	Err         error
-	Parent      string // "" when the type has no parent
-	Lineage     []string
+	Text  string
+	Root  *Type
+	Types map[string]*Type // named object types, the root included
+	Order []*Type          // named types in definition order
 }
 
-// Annotations returns the annotations on the event's top-level object.
-func (s *Schema) Annotations() []Annotation {
-	if s.Root == nil {
-		return nil
-	}
-	return s.Root.Annotations
-}
-
-// Field returns the field with the given path template.
-func (s *Schema) Field(path string) (Field, bool) {
-	for _, f := range s.Fields {
-		if f.Path == path {
-			return f, true
-		}
-	}
-	return Field{}, false
-}
-
-func validTypeName(name string) bool { return matchWord(name, ".") == len(name) && name != "" }
-
-// matchWord returns the length of an identifier [A-Za-z_][A-Za-z0-9_<extra>]*
-// at the start of s, or 0.
-func matchWord(s string, extra string) int {
-	if s == "" || !(isAlpha(s[0]) || s[0] == '_') {
-		return 0
-	}
-	i := 1
-	for i < len(s) && (isAlpha(s[i]) || isDigit(s[i]) || s[i] == '_' || strings.IndexByte(extra, s[i]) >= 0) {
-		i++
-	}
-	return i
-}
-
-func isAlpha(c byte) bool { return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' }
-func isDigit(c byte) bool { return c >= '0' && c <= '9' }
-
-// ParseDefinition parses a definition and returns its root object and type
-// description. With strict, unknown leaf types are errors (a 1.0 writer's
-// view); without it they are read as str (a reader's view, SPEC §9).
-func ParseDefinition(text string, strict bool) (*Type, string, error) {
-	p := &parser{s: text, strict: strict, comments: map[int]comment{}}
-	return p.parse()
-}
-
-// parentName returns the parent a type of this name and schema version has,
-// or "" (SPEC §5: only schemas declaring 1.1 or later have children).
-func parentName(name, version string) string {
-	major, minor, _ := strings.Cut(version, ".")
-	if !canonicalVersion([]byte(version)) || major != "1" || minor == "0" {
-		return ""
-	}
-	i := strings.LastIndexByte(name, '.')
-	if i < 0 {
-		return ""
-	}
-	return name[:i]
-}
-
-// buildSchema parses text into a Schema. When not strict, parse failures are
-// kept in Err. types holds the schemas defined before this one, for finding a
-// child's parent.
-func buildSchema(name string, index int, version, text string, strict bool, types map[string]*Schema) (*Schema, error) {
-	s := &Schema{Name: name, Index: index, Version: version, Text: text, Parent: parentName(name, version)}
-	s.Lineage = []string{name}
-	var p *Schema
-	var err error
-	if s.Parent != "" {
-		if p = types[s.Parent]; p == nil {
-			err = &SchemaError{Msg: fmt.Sprintf("parent type '%s' must be defined before '%s'", s.Parent, name)}
-		} else {
-			s.Lineage = append(append(make([]string, 0, len(p.Lineage)+1), p.Lineage...), name)
-		}
-	}
-	major, _, ok := strings.Cut(version, ".")
-	switch {
-	case err != nil: // the parent is missing
-	case !ok || major != "1" || !canonicalVersion([]byte(version)):
-		err = &SchemaError{Msg: "unsupported schema version " + version}
-	default:
-		s.Root, s.Description, err = ParseDefinition(text, strict)
-	}
-	if err == nil && p != nil {
-		s.Root, err = inherit(p, s.Root, text)
-	}
+// ParseSchema parses schema text.
+func ParseSchema(text string) (*Schema, error) {
+	p := &schemaParser{src: text, line: 1, col: 1}
+	s, err := p.parse()
 	if err != nil {
-		if strict {
-			return nil, err
-		}
-		s.Root, s.Description, s.Err = nil, "", err
-		return s, nil
+		return nil, err
 	}
-	s.Fields = flatten(s.Root)
+	s.Text = text
 	return s, nil
 }
 
-// inherit returns a child's top-level object: its parent's members, then its
-// own. A key the parent already has is an error.
-func inherit(p *Schema, root *Type, text string) (*Type, error) {
-	if p.Root == nil {
-		return nil, &SchemaError{Msg: fmt.Sprintf("parent type '%s' can't be parsed", p.Name)}
-	}
-	inherited := make(map[string]bool, len(p.Root.Members))
-	for _, m := range p.Root.Members {
-		inherited[m.Key] = true
-	}
-	for _, m := range root.Members {
-		if inherited[m.Key] {
-			col := m.pos - strings.LastIndexByte(text[:m.pos], '\n')
-			return nil, &SchemaError{Msg: fmt.Sprintf("key '%s' is already defined by '%s'", m.Key, p.Name),
-				Line: m.line, Column: col}
-		}
-	}
-	members := make([]Member, 0, len(p.Root.Members)+len(root.Members))
-	members = append(append(members, p.Root.Members...), root.Members...)
-	return &Type{Kind: KindObject, Members: members, Optional: root.Optional, Annotations: root.Annotations}, nil
+type token struct {
+	kind      byte // 'n' name, 'p' punctuation, 'c' comment, 'e' end
+	text      string
+	line, col int
+	lineStart bool // the first token on its line
 }
 
-func flatten(root *Type) []Field {
-	var out []Field
-	flattenObject(root, "", false, &out)
-	return out
+type schemaParser struct {
+	src       string
+	pos       int
+	line, col int
+	toks      []token
+	i         int
 }
 
-func flattenObject(obj *Type, prefix string, optional bool, out *[]Field) {
-	for _, m := range obj.Members {
-		path := m.Key
-		if prefix != "" {
-			path = prefix + "." + m.Key
-		}
-		flattenType(m.Type, path, optional, nil, m.Description, out)
-	}
+func (p *schemaParser) errAt(t token, format string, args ...any) error {
+	return &SchemaError{Msg: fmt.Sprintf(format, args...), Line: t.line, Column: t.col}
 }
 
-func flattenType(t *Type, path string, optional bool, anns []Annotation, desc string, out *[]Field) {
-	optional = optional || t.Optional
-	anns = append(append([]Annotation(nil), anns...), t.Annotations...)
-	switch t.Kind {
-	case KindStr, KindNum, KindEnum:
-		*out = append(*out, Field{
-			Path: path, Type: t.Kind.String(), Enum: t.Words, Unknown: t.Unknown, Block: t.Block,
-			Optional: optional, Annotations: anns, Description: desc,
-		})
-	case KindObject:
-		flattenObject(t, path, optional, out)
-	case KindList:
-		flattenType(t.Elem, path+".[]", optional, anns, desc, out)
-	case KindMap:
-		flattenType(t.Elem, path+".{}", optional, anns, desc, out)
-	}
-}
-
-type comment struct {
-	line  int
-	alone bool
-	text  string
-}
-
-type parser struct {
-	s        string
-	i        int
-	strict   bool
-	comments map[int]comment
-	members  []*Member
-	pending  []pendingObject
-}
-
-// pendingObject holds an object's members by pointer until descriptions are
-// assigned at the end of parsing.
-type pendingObject struct {
-	obj     *Type
-	members []*Member
-}
-
-type parseFail struct{ err *SchemaError }
-
-func (p *parser) fail(pos int, format string, args ...any) {
-	line := strings.Count(p.s[:pos], "\n") + 1
-	col := pos - (strings.LastIndexByte(p.s[:pos], '\n') + 1) + 1
-	panic(parseFail{&SchemaError{Msg: fmt.Sprintf(format, args...), Line: line, Column: col}})
-}
-
-func (p *parser) peek() byte {
-	if p.i < len(p.s) {
-		return p.s[p.i]
-	}
-	return 0
-}
-
-func (p *parser) ws() {
-	for p.i < len(p.s) {
-		c := p.s[p.i]
+func (p *schemaParser) lex() error {
+	lineStart := true
+	for p.pos < len(p.src) {
+		c := p.src[p.pos]
+		start := token{line: p.line, col: p.col, lineStart: lineStart}
 		switch {
-		case c == ' ' || c == '\t' || c == '\n':
-			p.i++
-		case strings.HasPrefix(p.s[p.i:], "//"):
-			end := strings.IndexByte(p.s[p.i:], '\n')
+		case c == '\n':
+			p.pos++
+			p.line++
+			p.col = 1
+			lineStart = true
+			continue
+		case c == ' ' || c == '\t' || c == '\r':
+			p.pos++
+			p.col++
+			continue
+		case c == '#':
+			end := strings.IndexByte(p.src[p.pos:], '\n')
 			if end < 0 {
-				end = len(p.s)
-			} else {
-				end += p.i
+				end = len(p.src) - p.pos
 			}
-			if _, seen := p.comments[p.i]; !seen {
-				lineStart := strings.LastIndexByte(p.s[:p.i], '\n') + 1
-				p.comments[p.i] = comment{
-					line:  strings.Count(p.s[:p.i], "\n") + 1,
-					alone: strings.Trim(p.s[lineStart:p.i], " \t") == "",
-					text:  strings.Trim(p.s[p.i+2:end], " \t"),
-				}
+			start.kind, start.text = 'c', strings.TrimSpace(p.src[p.pos+1:p.pos+end])
+			p.pos += end
+			p.col += end
+		case isNameStart(c):
+			j := p.pos + 1
+			for j < len(p.src) && isNameChar(p.src[j]) {
+				j++
 			}
-			p.i = end
+			start.kind, start.text = 'n', p.src[p.pos:j]
+			p.col += j - p.pos
+			p.pos = j
+		case strings.IndexByte("{}(),:?|", c) >= 0:
+			start.kind, start.text = 'p', string(c)
+			p.pos++
+			p.col++
 		default:
-			return
+			return &SchemaError{Msg: fmt.Sprintf("unexpected character %q", c), Line: p.line, Column: p.col}
 		}
+		p.toks = append(p.toks, start)
+		lineStart = false
 	}
+	p.toks = append(p.toks, token{kind: 'e', text: "end of schema", line: p.line, col: p.col, lineStart: true})
+	return nil
 }
 
-func (p *parser) expect(c byte) {
-	p.ws()
-	if p.peek() != c {
-		p.fail(p.i, "expected '%c'", c)
+func isNameStart(c byte) bool { return c == '_' || c >= 'A' && c <= 'Z' || c >= 'a' && c <= 'z' }
+func isNameChar(c byte) bool  { return isNameStart(c) || c >= '0' && c <= '9' }
+
+// IsName reports whether s matches [A-Za-z_][A-Za-z0-9_]*.
+func IsName(s string) bool {
+	if s == "" || !isNameStart(s[0]) {
+		return false
 	}
-	p.i++
+	for i := 1; i < len(s); i++ {
+		if !isNameChar(s[i]) {
+			return false
+		}
+	}
+	return true
 }
 
-func (p *parser) parse() (root *Type, desc string, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			f, ok := r.(parseFail)
-			if !ok {
-				panic(r)
-			}
-			root, desc, err = nil, "", f.err
-		}
-	}()
-	for i := 0; i < len(p.s); i++ {
-		if p.s[i] >= 0x80 {
-			p.fail(i, "schemas are ASCII")
-		}
-	}
-	p.ws()
-	if p.peek() != '{' {
-		p.fail(p.i, "expected '{' after the type's comment lines")
-	}
-	brace := p.i
-	root = p.parseObject()
-	for {
-		p.ws()
-		if c := p.peek(); c == '@' {
-			root.Annotations = append(root.Annotations, p.parseAnnotation())
-		} else if c == '?' {
-			p.fail(p.i, "an event's top-level type can't be optional")
-		} else {
-			break
-		}
-	}
-	if p.i != len(p.s) {
-		p.fail(p.i, "unexpected text after the definition")
-	}
-	positions := make([]int, 0, len(p.comments))
-	for pos := range p.comments {
-		positions = append(positions, pos)
-	}
-	sort.Ints(positions)
-	var lines []string
-	for _, pos := range positions {
-		if pos < brace {
-			lines = append(lines, p.comments[pos].text)
-		}
-	}
-	desc = strings.Join(lines, "\n")
-	byLine := map[int]*Member{}
-	for _, m := range p.members {
-		if prev := byLine[m.line]; prev == nil || m.pos > prev.pos {
-			byLine[m.line] = m
-		}
-	}
-	for _, pos := range positions {
-		c := p.comments[pos]
-		if pos > brace && !c.alone && byLine[c.line] != nil {
-			byLine[c.line].Description = c.text
-		}
-	}
-	for _, po := range p.pending {
-		for i, m := range po.members {
-			po.obj.Members[i] = *m
-		}
-	}
-	return root, desc, nil
-}
+func (p *schemaParser) peek() token { return p.toks[p.i] }
 
-func (p *parser) parseObject() *Type {
-	p.expect('{')
-	obj := &Type{Kind: KindObject, Members: []Member{}}
-	var members []*Member
-	keys := map[string]bool{}
-	for {
-		p.ws()
-		if p.peek() == '}' {
-			p.i++
-			break
-		}
-		n := matchWord(p.s[p.i:], "")
-		if n == 0 {
-			p.fail(p.i, "expected a key")
-		}
-		pos := p.i
-		key := p.s[pos : pos+n]
-		if keys[key] {
-			p.fail(pos, "duplicate key '%s'", key)
-		}
-		keys[key] = true
-		p.i += n
-		p.expect(':')
-		t := p.parseType()
-		members = append(members, &Member{Key: key, Type: t, line: strings.Count(p.s[:pos], "\n") + 1, pos: pos})
-		p.ws()
-		switch p.peek() {
-		case ',':
-			p.i++
-		case '}':
-		default:
-			p.fail(p.i, "expected ',' or '}'")
-		}
-	}
-	p.members = append(p.members, members...)
-	obj.Members = make([]Member, len(members))
-	p.pending = append(p.pending, pendingObject{obj, members})
-	return obj
-}
-
-func (p *parser) parseType() *Type {
-	type prefix struct {
-		kind byte
-		pos  int
-	}
-	var prefixes []prefix
-	var node *Type
-	for node == nil {
-		p.ws()
-		c, pos := p.peek(), p.i
-		if c == '|' {
-			prefixes = append(prefixes, prefix{'|', pos})
-			p.i++
-		} else if c == '[' {
-			p.i++
-			p.expect(']')
-			prefixes = append(prefixes, prefix{'[', pos})
-		} else if c == '{' {
-			p.i++
-			p.ws()
-			if p.peek() != '}' {
-				p.i = pos
-				break
-			}
-			p.i++
-			after := p.i
-			p.ws()
-			if c := p.peek(); c == '|' || c == '{' || c == '[' || c == '_' || isAlpha(c) {
-				prefixes = append(prefixes, prefix{'{', pos})
-			} else {
-				p.i = after
-				node = &Type{Kind: KindObject, Members: []Member{}}
-			}
-		} else {
-			break
-		}
-	}
-	if node == nil {
-		node = p.parseBase()
-	}
-	for i := len(prefixes) - 1; i >= 0; i-- {
-		switch prefixes[i].kind {
-		case '|':
-			if !node.IsLeaf() || node.Block {
-				p.fail(prefixes[i].pos, "'|' applies only to a leaf")
-			}
-			node.Block = true
-		case '[':
-			node = &Type{Kind: KindList, Elem: node}
-		case '{':
-			node = &Type{Kind: KindMap, Elem: node}
-		}
-	}
-	for {
-		p.ws()
-		switch p.peek() {
-		case '?':
-			if node.Optional {
-				p.fail(p.i, "repeated '?'")
-			}
-			node.Optional = true
-			p.i++
-		case '@':
-			node.Annotations = append(node.Annotations, p.parseAnnotation())
-		default:
-			return node
-		}
-	}
-}
-
-func (p *parser) parseAnnotation() Annotation {
-	p.i++
-	n := matchWord(p.s[p.i:], ".-")
-	if n == 0 {
-		p.fail(p.i, "expected an annotation name")
-	}
-	a := Annotation{Name: p.s[p.i : p.i+n]}
-	p.i += n
-	if p.peek() == '(' {
-		a.Text, a.HasText = p.parseParens(), true
-	}
-	return a
-}
-
-func (p *parser) parseParens() string {
-	start := p.i + 1
-	end := strings.IndexByte(p.s[start:], ')')
-	if end < 0 || strings.IndexByte(p.s[start:start+end], '\n') >= 0 {
-		p.fail(p.i, "unclosed '(' (text can't contain ')' or a line break)")
-	}
-	p.i = start + end + 1
-	return p.s[start : start+end]
-}
-
-func (p *parser) parseBase() *Type {
-	if p.peek() == '{' {
-		return p.parseObject()
-	}
-	start := p.i
-	n := matchWord(p.s[p.i:], ".")
-	if n == 0 {
-		p.fail(p.i, "expected a type")
-	}
-	word := p.s[p.i : p.i+n]
-	p.i += n
-	switch word {
-	case "str", "num":
-		if p.peek() == '(' {
-			p.fail(p.i, "%s takes no parameters", word)
-		}
-		if word == "str" {
-			return &Type{Kind: KindStr}
-		}
-		return &Type{Kind: KindNum}
-	case "enum":
-		if p.peek() != '(' {
-			p.fail(p.i, "expected '(' after enum")
-		}
+func (p *schemaParser) next() token {
+	t := p.toks[p.i]
+	if t.kind != 'e' {
 		p.i++
-		var words []string
+	}
+	return t
+}
+
+// comments collects the comment lines at the cursor, joined by spaces.
+func (p *schemaParser) comments() string {
+	var parts []string
+	for p.peek().kind == 'c' {
+		if t := p.next(); t.text != "" {
+			parts = append(parts, t.text)
+		}
+	}
+	return strings.Join(parts, " ")
+}
+
+// trailing returns a comment on the same line as the previous token.
+func (p *schemaParser) trailing() string {
+	if t := p.peek(); t.kind == 'c' && !t.lineStart {
+		p.next()
+		return t.text
+	}
+	return ""
+}
+
+func (p *schemaParser) expect(text string) (token, error) {
+	t := p.next()
+	if t.text != text || t.kind == 'c' || t.kind == 'e' && text != "end of schema" {
+		return t, p.errAt(t, "expected %q, found %q", text, t.text)
+	}
+	return t, nil
+}
+
+func (p *schemaParser) name(what string) (token, error) {
+	t := p.next()
+	if t.kind != 'n' {
+		return t, p.errAt(t, "expected %s, found %q", what, t.text)
+	}
+	return t, nil
+}
+
+// pending is a reference to a named type, resolved after parsing.
+type pending struct {
+	f   *Field
+	tok token
+}
+
+func (p *schemaParser) parse() (*Schema, error) {
+	if err := p.lex(); err != nil {
+		return nil, err
+	}
+	s := &Schema{Types: map[string]*Type{}}
+	var refs []pending
+	for {
+		desc := p.comments()
+		t := p.next()
+		if t.kind == 'e' {
+			break
+		}
+		if t.text != "object" && t.text != "root" || t.kind != 'n' {
+			return nil, p.errAt(t, "expected object or root, found %q", t.text)
+		}
+		nt, err := p.name("a type name")
+		if err != nil {
+			return nil, err
+		}
+		if s.Types[nt.text] != nil || isBuiltin(nt.text) {
+			return nil, p.errAt(nt, "type %s is already defined", nt.text)
+		}
+		typ := &Type{Name: nt.text, Desc: desc}
+		if t.text == "root" {
+			if s.Root != nil {
+				return nil, p.errAt(t, "a schema has exactly one root")
+			}
+			s.Root = typ
+		}
+		s.Types[nt.text] = typ
+		s.Order = append(s.Order, typ)
+		if _, err := p.expect("{"); err != nil {
+			return nil, err
+		}
+		if typ.Desc == "" {
+			typ.Desc = p.trailing()
+		}
+		if err := p.fields(typ, &refs); err != nil {
+			return nil, err
+		}
+	}
+	if s.Root == nil {
+		return nil, &SchemaError{Msg: "the schema has no root"}
+	}
+	for _, r := range refs {
+		typ := s.Types[r.tok.text]
+		if typ == nil {
+			return nil, p.errAt(r.tok, "unknown type %s", r.tok.text)
+		}
+		if typ == s.Root {
+			return nil, p.errAt(r.tok, "the root type %s can't be used as a field", r.tok.text)
+		}
+		r.f.Type = typ
+	}
+	for _, typ := range s.Order {
+		linkItems(typ)
+	}
+	for _, typ := range s.Order {
+		if err := checkCycles(typ, nil); err != nil {
+			return nil, err
+		}
+	}
+	done := map[*Type]bool{}
+	for _, typ := range s.Order {
+		if err := derive(typ, done); err != nil {
+			return nil, err
+		}
+	}
+	return s, nil
+}
+
+func isBuiltin(name string) bool {
+	switch name {
+	case "str", "num", "enum", "path", "event", "object", "root":
+		return true
+	}
+	return false
+}
+
+// fields parses members up to the closing brace.
+func (p *schemaParser) fields(typ *Type, refs *[]pending) error {
+	for {
+		desc := p.comments()
+		if p.peek().text == "}" && p.peek().kind == 'p' {
+			p.next()
+			return nil
+		}
+		nt, err := p.name("a field name or }")
+		if err != nil {
+			return err
+		}
+		if typ.Field(nt.text) != nil {
+			return p.errAt(nt, "field %s is defined twice", nt.text)
+		}
+		if _, err := p.expect(":"); err != nil {
+			return err
+		}
+		f := &Field{Name: nt.text, Desc: desc}
+		typ.Fields = append(typ.Fields, f)
+		if err := p.typeExpr(f, refs, false); err != nil {
+			return err
+		}
+		if t := p.peek(); t.kind == 'p' && t.text == "," {
+			p.next()
+		} else if !(t.kind == 'p' && t.text == "}") && !(t.kind == 'c') {
+			return p.errAt(t, "expected , or }, found %q", t.text)
+		}
+		if c := p.trailing(); c != "" && f.Desc == "" {
+			f.Desc = c
+		}
+	}
+}
+
+// typeExpr parses a field's type into f.
+func (p *schemaParser) typeExpr(f *Field, refs *[]pending, inEvent bool) error {
+	t := p.next()
+	switch {
+	case t.kind == 'p' && t.text == "|":
+		if n, err := p.name("str"); err != nil || n.text != "str" {
+			return p.errAt(n, "expected str after |")
+		}
+		f.Kind, f.Block = KindStr, true
+	case t.kind == 'p' && t.text == "{":
+		inline := &Type{}
+		if c := p.trailing(); c != "" && f.Desc == "" {
+			f.Desc = c
+		}
+		if err := p.fields(inline, refs); err != nil {
+			return err
+		}
+		f.Kind, f.Type = KindObject, inline
+	case t.kind == 'n' && t.text == "event":
+		if inEvent {
+			return p.errAt(t, "an event list can't hold event lists directly")
+		}
+		item := &Field{Name: f.Name}
+		if err := p.typeExpr(item, refs, true); err != nil {
+			return err
+		}
+		if item.Optional {
+			return p.errAt(t, "event list items can't be optional")
+		}
+		f.Kind, f.Item = KindEvent, item
+		return nil
+	case t.kind == 'n' && t.text == "str":
+		f.Kind = KindStr
+	case t.kind == 'n' && t.text == "num":
+		f.Kind = KindNum
+	case t.kind == 'n' && t.text == "path":
+		f.Kind = KindPath
+	case t.kind == 'n' && t.text == "enum":
+		if _, err := p.expect("("); err != nil {
+			return err
+		}
 		for {
-			p.ws()
-			if p.peek() == ')' {
-				p.i++
-				break
+			w, err := p.name("an enum word")
+			if err != nil {
+				return err
 			}
-			n := matchWord(p.s[p.i:], "")
-			if n == 0 {
-				p.fail(p.i, "expected an enum word")
-			}
-			w := p.s[p.i : p.i+n]
-			for _, x := range words {
-				if x == w {
-					p.fail(p.i, "duplicate enum word '%s'", w)
+			for _, x := range f.Words {
+				if x == w.text {
+					return p.errAt(w, "enum word %s is repeated", w.text)
 				}
 			}
-			words = append(words, w)
-			p.i += n
-			p.ws()
-			switch p.peek() {
-			case ',':
-				p.i++
-			case ')':
-			default:
-				p.fail(p.i, "expected ',' or ')'")
+			f.Words = append(f.Words, w.text)
+			sep := p.next()
+			if sep.text == ")" {
+				break
+			}
+			if sep.text != "," {
+				return p.errAt(sep, "expected , or ), found %q", sep.text)
+			}
+			if p.peek().text == ")" {
+				p.next()
+				break
 			}
 		}
-		if len(words) == 0 {
-			p.fail(start, "enum needs at least one word")
+		f.Kind = KindEnum
+	case t.kind == 'n' && !isBuiltin(t.text):
+		f.Kind = KindObject
+		*refs = append(*refs, pending{f: f, tok: t})
+	default:
+		return p.errAt(t, "expected a type, found %q", t.text)
+	}
+	if q := p.peek(); q.kind == 'p' && q.text == "?" {
+		p.next()
+		f.Optional = true
+	}
+	return nil
+}
+
+// checkCycles rejects a type that contains itself.
+func checkCycles(t *Type, stack []*Type) error {
+	for _, s := range stack {
+		if s == t {
+			return &SchemaError{Msg: fmt.Sprintf("type %s contains itself", t.Name)}
 		}
-		return &Type{Kind: KindEnum, Words: words}
 	}
-	if p.peek() == '(' {
-		p.parseParens()
+	stack = append(stack, t)
+	for _, f := range t.Fields {
+		if f.Type != nil {
+			if err := checkCycles(f.Type, stack); err != nil {
+				return err
+			}
+		}
 	}
-	if p.strict {
-		p.fail(start, "unknown type '%s'", word)
+	return nil
+}
+
+// linkItems sets each object event list's Type to its item type.
+func linkItems(t *Type) {
+	for _, f := range t.Fields {
+		if f.Kind == KindEvent && f.Item.Kind == KindObject {
+			f.Type = f.Item.Type
+		}
+		if f.Type != nil && f.Type.Name == "" {
+			linkItems(f.Type)
+		}
 	}
-	return &Type{Kind: KindStr, Unknown: p.s[start:p.i]}
+}
+
+// derive fills in slots and events, children first.
+func derive(t *Type, done map[*Type]bool) error {
+	if done[t] {
+		return nil
+	}
+	done[t] = true
+	for _, f := range t.Fields {
+		if f.Type != nil {
+			if err := derive(f.Type, done); err != nil {
+				return err
+			}
+		}
+		switch {
+		case f.Kind == KindEvent:
+			t.slots = append(t.slots, f)
+		case f.Kind == KindObject && f.Type.events:
+			if f.Optional {
+				return &SchemaError{Msg: fmt.Sprintf("optional field %s can't contain event lists", f.Name)}
+			}
+			t.slots = append(t.slots, f)
+		}
+	}
+	if len(t.slots) > 64 {
+		return &SchemaError{Msg: "an object can have at most 64 event lists and nested objects with event lists"}
+	}
+	t.events = len(t.slots) > 0
+	return nil
+}
+
+// segments splits a path into its dotted parts.
+func segments(path string) []string {
+	if path == "" {
+		return nil
+	}
+	return strings.Split(path, ".")
 }

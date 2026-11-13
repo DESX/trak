@@ -1,275 +1,263 @@
 package trak
 
 import (
-	"bytes"
-	"errors"
-	"slices"
-	"strconv"
-	"strings"
+	"fmt"
+	"os"
+	"sort"
 )
 
-// Check validates a whole file and returns its number of objects. It fails on
-// the first problem with a *FormatError holding the byte offset.
-//
-// A torn tail (SPEC §11) is allowed, but only when it holds no complete
-// footer line: an invalid footer after the last valid one is reported rather
-// than ignored.
-func Check(path string) (int, error) {
-	r, err := Open(path)
+// Report summarizes a checked file.
+type Report struct {
+	Versions    uint64
+	Size        int64 // bytes of valid appends, header included
+	Torn        int64 // bytes after the last valid append
+	SchemaBytes int64
+	BodyBytes   int64
+	FooterBytes int64
+	FullNodes   uint64
+	DeltaNodes  uint64
+	footers     []int32
+}
+
+// FooterStats returns the mean, 99th percentile and largest footer line.
+func (r *Report) FooterStats() (mean float64, p99, max int) {
+	if len(r.footers) == 0 {
+		return 0, 0, 0
+	}
+	s := append([]int32(nil), r.footers...)
+	sort.Slice(s, func(i, j int) bool { return s[i] < s[j] })
+	return float64(r.FooterBytes) / float64(len(s)), int(s[len(s)*99/100]), int(s[len(s)-1])
+}
+
+// CheckOptions configure Check.
+type CheckOptions struct {
+	Progress func(done, total uint64) // called every 65536 versions
+}
+
+// Check validates every append of the named file (SPEC §7): each footer
+// parses, each body walks, each value is valid, and each version is an exact
+// path copy of the one before. A torn tail is reported as an error after the
+// rest has been checked.
+func Check(name string, opt *CheckOptions) error {
+	_, err := CheckReport(name, opt)
+	return err
+}
+
+// CheckReport is Check, also returning a summary.
+func CheckReport(name string, opt *CheckOptions) (*Report, error) {
+	f, err := Open(name)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
-	defer r.Close()
-	if r.TailErr != nil {
-		var fe *FormatError
-		if errors.As(r.TailErr, &fe) {
-			return 0, formatErr(fe.Offset, "ignored tail has an invalid footer: %s", fe.Msg)
-		}
-		return 0, formatErr(r.End(), "ignored tail has an invalid footer: %v", r.TailErr)
-	}
-	c := &checker{r: r, buf: r.buf, types: map[string]*checkType{}, schemas: map[string]*Schema{}}
-	return c.run()
-}
-
-type checkType struct {
-	schema *Schema
-	ends   []int64 // end offset of node 0, 1, 2, ...
-	// The family's latest timestamp, kept on its root.
-	lastMs      int64
-	hasTs       bool
-	familyCount uint64
-	hasChild    bool
-	lineage     []*checkType // root first, ending with this type
-}
-
-type checker struct {
-	r             *Reader
-	buf           []byte
-	types         map[string]*checkType
-	schemas       map[string]*Schema
-	order         []*checkType
-	lastSchemaEnd int64
-}
-
-func (c *checker) run() (int, error) {
-	var footers []*footer
-	f, err := c.r.last()
-	for err == nil && f != nil {
-		footers = append(footers, f)
-		f, err = c.r.prev(f)
-	}
+	defer f.Close()
+	st, err := os.Stat(name)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
-	for i := len(footers) - 1; i >= 0; i-- {
-		if footers[i].schema {
-			err = c.schema(footers[i])
-		} else {
-			err = c.event(footers[i])
-		}
-		if err != nil {
-			return 0, err
-		}
-	}
-	return len(footers), nil
-}
-
-func (c *checker) pointer(f *footer, value uint64, targetEnd int64, what string) error {
-	want := uint64(f.start - targetEnd + 1)
-	if value != want {
-		return formatErr(f.fstart, "%s pointer is %d, expected %d", what, value, want)
-	}
-	return nil
-}
-
-func (c *checker) schema(f *footer) error {
-	if !validTypeName(f.name) {
-		return formatErr(f.fstart, "bad type name %q", f.name)
-	}
-	if c.types[f.name] != nil {
-		return formatErr(f.fstart, "duplicate schema name %q", f.name)
-	}
-	if f.num != uint64(len(c.order)+1) {
-		return formatErr(f.fstart, "schema index %d, expected %d", f.num, len(c.order)+1)
-	}
-	if len(c.order) == 0 {
-		if f.vlqs[1] != 0 {
-			return formatErr(f.fstart, "first schema's previous-schema pointer must be 0")
-		}
-	} else if err := c.pointer(f, f.vlqs[1], c.lastSchemaEnd, "previous-schema"); err != nil {
-		return err
-	}
-	body := c.buf[f.start:f.fstart]
-	if !bytes.HasSuffix(body, []byte("\n")) {
-		return formatErr(f.fstart, "schema body must end with LF")
-	}
-	major, minor, _ := strings.Cut(f.stamp, ".")
-	if major != "1" {
-		return formatErr(f.fstart, "unsupported schema version %s", f.stamp)
-	}
-	// 1.0 and 1.1 are parsed strictly, newer minors leniently (DECISIONS I5).
-	strict := minor == "0" || minor == "1"
-	var parent *checkType
-	if name := parentName(f.name, f.stamp); name != "" {
-		if parent = c.types[name]; parent == nil {
-			return formatErr(f.fstart, "schema %s comes before its parent %s", f.name, name)
-		}
-		parent.hasChild = true
-		if parent.schema.Root == nil {
-			strict = false // the child's object can't be known either
-		}
-	}
-	for i, b := range body {
-		if b >= 0x80 {
-			return formatErr(f.start+int64(i), "schema is not ASCII")
-		}
-	}
-	schema, err := buildSchema(f.name, int(f.num), f.stamp, string(body), strict, c.schemas)
+	rep, err := f.check(opt)
 	if err != nil {
-		return formatErr(f.start, "schema %s: %v", f.name, err)
+		return rep, err
 	}
-	t := &checkType{schema: schema, ends: []int64{f.end}}
-	if parent != nil {
-		t.lineage = append(t.lineage, parent.lineage...)
+	rep.Torn = st.Size() - f.size
+	if rep.Torn > 0 {
+		return rep, formatErr(f.size, "%d bytes after the last valid append", rep.Torn)
 	}
-	t.lineage = append(t.lineage, t)
-	c.types[f.name] = t
-	c.schemas[f.name] = schema
-	c.order = append(c.order, t)
-	c.lastSchemaEnd = f.end
-	return nil
+	return rep, nil
 }
 
-func (c *checker) event(f *footer) error {
-	t := c.types[f.name]
-	if t == nil {
-		return formatErr(f.fstart, "event of type %q before its schema", f.name)
+func (f *File) check(opt *CheckOptions) (*Report, error) {
+	rep := &Report{Size: f.size, SchemaBytes: f.schemaEnd}
+	if f.latest == nil {
+		return rep, formatErr(f.schemaEnd, "the file has no root append")
 	}
-	n := uint64(len(t.ends))
-	if f.num != n {
-		return formatErr(f.fstart, "%s event number %d, expected %d", f.name, f.num, n)
-	}
-	ts, err := ParseTimestamp(f.stamp)
-	if err != nil {
-		return formatErr(f.fstart, "invalid timestamp %s", f.stamp)
-	}
-	ms := toMillis(ts)
-	family := t.lineage[0]
-	if family.hasTs && ms < family.lastMs {
-		what := f.name
-		if family.hasChild {
-			what = "family " + family.schema.Name
+	n := f.latest.version
+	rep.Versions = n
+	ends := make([]int64, n+1)
+	for cur := f.latest; ; {
+		if ends[cur.version] != 0 {
+			return rep, formatErr(cur.start, "version %d appears twice", cur.version)
 		}
-		return formatErr(f.fstart, "%s timestamp goes backwards", what)
-	}
-	levels := t.lineage
-	if !t.hasChild {
-		levels = levels[:len(levels)-1]
-	}
-	want := make([]uint64, len(levels))
-	for i, a := range levels {
-		want[i] = a.familyCount + 1
-	}
-	got := f.vlqs[6 : 6+min(f.vlqs[5], uint64(len(want)))]
-	if !slices.Equal(got, want) {
-		return formatErr(f.fstart, "%s family numbers are %v, expected %v", f.name, got, want)
-	}
-	if err := c.pointer(f, f.vlqs[1], t.ends[n-1], "step"); err != nil {
-		return err
-	}
-	if err := c.pointer(f, f.vlqs[2], t.ends[Jump(n)], "jump"); err != nil {
-		return err
-	}
-	dt := f.vlqs[4]
-	if dt > uint64(len(c.order)) {
-		return formatErr(f.fstart, "dir type %d is not defined yet", dt)
-	}
-	dirEnd := c.lastSchemaEnd
-	if dt > 0 {
-		ends := c.order[dt-1].ends
-		dirEnd = ends[len(ends)-1]
-	}
-	if err := c.pointer(f, f.vlqs[3], dirEnd, "dir"); err != nil {
-		return err
-	}
-	if root := t.schema.Root; root != nil {
-		w, err := newWalk(root, f.values(), f.start, f.fstart)
-		if err != nil {
-			return err
-		}
-		if err := c.framing(root, w.tree, nil, w); err != nil {
-			return err
-		}
-	}
-	t.ends = append(t.ends, f.end)
-	family.lastMs, family.hasTs = ms, true
-	for _, a := range t.lineage {
-		a.familyCount++
-	}
-	return nil
-}
-
-// framing checks the bytes around each value: paths, separators and labels.
-func (c *checker) framing(t *Type, node any, path []byte, w *walk) error {
-	switch n := node.(type) {
-	case nil:
-		return nil
-	case leafRef:
-		return c.leaf(&w.leaves[n], path)
-	case objNode:
-		for i, m := range t.Members {
-			if err := c.framing(m.Type, n[i], join(path, m.Key), w); err != nil {
-				return err
+		ends[cur.version] = cur.end
+		if cur.version == 1 {
+			if cur.body != f.schemaEnd {
+				return rep, formatErr(cur.body, "version 1 must follow the schema")
 			}
+			break
 		}
-	case listNode:
-		for i, item := range n {
-			if err := c.framing(t.Elem, item, join(path, strconv.Itoa(i)), w); err != nil {
-				return err
-			}
+		prev, err := f.footer(cur.body)
+		if err != nil {
+			return rep, err
 		}
-	case *mapNode:
-		for _, e := range n.entries {
-			if e.first < 0 {
+		if prev.version != cur.version-1 {
+			return rep, formatErr(cur.start, "version %d follows version %d", cur.version, prev.version)
+		}
+		cur = prev
+	}
+	rep.footers = make([]int32, 0, n)
+	var prev *footer
+	for v := uint64(1); v <= n; v++ {
+		if opt != nil && opt.Progress != nil && v%65536 == 0 {
+			opt.Progress(v, n)
+		}
+		ft, err := f.footer(ends[v])
+		if err != nil {
+			return rep, err
+		}
+		if err := f.checkAppend(ft, prev, ends); err != nil {
+			return rep, fmt.Errorf("version %d (%s): %w", v, ft.path, err)
+		}
+		rep.BodyBytes += ft.start - ft.body
+		rep.FooterBytes += ft.end - ft.start
+		rep.footers = append(rep.footers, int32(ft.end-ft.start))
+		for _, nd := range ft.nodes {
+			if nd.kind == nodeLeafItem {
 				continue
 			}
-			off := w.leaves[e.first].pathOff() + int64(len(path)) + 1
-			key := c.buf[off : off+int64(e.klen)]
-			if err := c.framing(t.Elem, e.child, join(path, string(key)), w); err != nil {
-				return err
+			if nd.full {
+				rep.FullNodes++
+			} else {
+				rep.DeltaNodes++
+			}
+		}
+		prev = ft
+	}
+	return rep, nil
+}
+
+func (f *File) checkAppend(ft, prev *footer, ends []int64) error {
+	v := ft.version
+	if prev != nil && ft.ms < prev.ms {
+		return formatErr(ft.start, "timestamp %s is before %s", ft.stamp, prev.stamp)
+	}
+	var want int64
+	if j := Jump(v); j > 0 {
+		want = ends[j]
+	}
+	if ft.vjump != want {
+		return formatErr(ft.start, "version jump names the wrong append")
+	}
+	var body []byte
+	if err := f.walkBody(ft, &body); err != nil {
+		return err
+	}
+	var p *plan
+	if v == 1 {
+		p = planRoot(f.schema)
+	} else {
+		var err error
+		if p, err = f.planAppend(prev, ft.segs[:len(ft.segs)-1]); err != nil {
+			return err
+		}
+	}
+	if joinSegs(p.segs) != ft.path {
+		return formatErr(ft.start, "the next item is %s, not %s", joinSegs(p.segs), ft.path)
+	}
+	for _, lp := range ft.leaves {
+		if !lp.present {
+			continue
+		}
+		val := body[lp.off : lp.off+lp.n]
+		switch lp.field.Kind {
+		case KindNum:
+			if !ValidNum(val) {
+				return formatErr(ft.body+lp.off, "%s: %q is not a num", lp.rel, val)
+			}
+		case KindEnum:
+			ok := false
+			for _, w := range lp.field.Words {
+				ok = ok || w == string(val)
+			}
+			if !ok {
+				return formatErr(ft.body+lp.off, "%s: %q is not one of %v", lp.rel, val, lp.field.Words)
+			}
+		case KindPath:
+			if err := f.checkStoredPath(string(val), prev); err != nil {
+				return formatErr(ft.body+lp.off, "%s: %v", lp.rel, err)
+			}
+		}
+	}
+	if len(p.nodes) != len(ft.nodes) {
+		return formatErr(ft.start, "%d nodes, the path needs %d", len(ft.nodes), len(p.nodes))
+	}
+	self := func(r ref) ref {
+		if r.end == selfEnd {
+			r.end = ft.end
+		}
+		return r
+	}
+	for i := range p.nodes {
+		pn, n := &p.nodes[i], ft.nodes[i]
+		bad := func(format string, args ...any) error {
+			return formatErr(ft.start, "node %d: %s", i+1, fmt.Sprintf(format, args...))
+		}
+		if pn.kind != n.kind || pn.typ != n.typ {
+			return bad("wrong kind of node")
+		}
+		if n.kind == nodeLeafItem {
+			continue
+		}
+		if n.kind != nodeRoot && (n.k != pn.k || n.prev != self(pn.prev) || n.jump != self(pn.jump)) {
+			return bad("version %d, prev or jump is wrong (want version %d)", n.k, pn.k)
+		}
+		if n.kind == nodeItem {
+			want := pn.leaves
+			if want == selfEnd {
+				want = ft.end
+			}
+			if n.leaves != want {
+				return bad("leaves reference is wrong")
+			}
+		}
+		if !n.full {
+			b, bft, err := f.resolve(n.base)
+			if err != nil {
+				return bad("delta base: %v", err)
+			}
+			if bft.end >= ft.end || !b.full || b.kind != n.kind || b.typ != n.typ {
+				return bad("a delta's base must be an earlier full node of the same kind")
+			}
+		} else if len(n.entries) != len(pn.entries) {
+			return bad("%d entries, want %d", len(n.entries), len(pn.entries))
+		}
+		es, err := f.entriesOf(n, len(pn.entries))
+		if err != nil {
+			return bad("%v", err)
+		}
+		if len(es) != len(pn.entries) {
+			return bad("%d entries, want %d", len(es), len(pn.entries))
+		}
+		for j, e := range es {
+			want := pn.entries[j]
+			want.ptr = self(want.ptr)
+			if e != want {
+				return bad("entry %d is %v, want %v", j, e, want)
 			}
 		}
 	}
 	return nil
 }
 
-func (c *checker) leaf(rec *leafRec, path []byte) error {
-	end := rec.voff + rec.length
-	if rec.t.Block {
-		label := append(append([]byte("\n--[ "), path...), " ]--\n"...)
-		if !bytes.Equal(c.buf[end:end+int64(len(label))], label) {
-			return formatErr(end, "block label for %q doesn't match", path)
-		}
-	} else {
-		head := append(append([]byte(nil), path...), ": "...)
-		if !bytes.Equal(c.buf[rec.start:rec.start+int64(len(head))], head) {
-			return formatErr(rec.start, "inline leaf doesn't start with %q", head)
-		}
-		if c.buf[end] != '\n' {
-			return formatErr(end, "inline leaf doesn't end with LF")
+// checkStoredPath requires a stored path to name a value of the version
+// before.
+func (f *File) checkStoredPath(p string, prev *footer) error {
+	segs := segments(p)
+	if len(segs) == 0 {
+		return fmt.Errorf("empty path")
+	}
+	for _, s := range segs {
+		if !IsName(s) && !isIndex(s) {
+			return fmt.Errorf("bad path %q", p)
 		}
 	}
-	value := c.buf[rec.voff:end]
-	switch {
-	case rec.t.Kind == KindNum && rec.t.Unknown == "" && !ValidNum(value):
-		return formatErr(rec.voff, "bad num value %q", value)
-	case rec.t.Kind == KindEnum:
-		for _, w := range rec.t.Words {
-			if string(value) == w {
-				return nil
-			}
-		}
-		return formatErr(rec.voff, "bad enum value %q", value)
+	if prev == nil {
+		return fmt.Errorf("path %s: nothing exists yet", p)
+	}
+	v, err := f.rootOf(prev).Get(p)
+	if err != nil {
+		return err
+	}
+	if l, ok := v.(Leaf); ok && !l.Present {
+		return fmt.Errorf("path %s names an absent value", p)
 	}
 	return nil
 }

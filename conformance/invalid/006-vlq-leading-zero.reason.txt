@@ -1,2 +1,0 @@
-b's previous-schema VLQ is written aB, with a leading zero (D5)
-offset: 52

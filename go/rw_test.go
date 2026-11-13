@@ -1,489 +1,296 @@
 package trak
 
 import (
-	"bytes"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"math"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
 )
 
-func specExample(t testing.TB) []byte {
-	data, err := os.ReadFile("../SPEC.md")
-	if err != nil {
-		t.Fatal(err)
-	}
-	s := string(data)
-	s = s[strings.Index(s, "## 13. Example"):]
-	start := strings.Index(s, "```\n") + 4
-	return []byte(s[start : start+strings.Index(s[start:], "```")])
+const ciSchema = `# A CI server.
+root ci {
+  name: str,
+  builds: event build,
+  config: {                    # settings
+    retries: event num,
+  },
 }
 
-const deployText = "// A release pushed to an environment.\n{\n  target: str,\n  version: str @semver,\n}\n"
-
-func mustTime(s string) time.Time {
-	t, err := ParseTimestamp(s)
-	if err != nil {
-		panic(err)
-	}
-	return t
+# One build.
+object build {
+  user: str,                   # who started it
+  status: event enum(running, ok, failed),
+  log: |str,
+  host: { name: str, cores: num? },
+  parent: path?,
 }
+`
 
-func writeExample(t testing.TB, path string) {
-	w, err := Create(path, Options{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer w.Close()
-	must(w.Define("build", strings.TrimSuffix(buildSchemaText, "\n")))
-	must(w.Define("deploy", deployText))
-	must(w.WriteAt("build", map[string]any{
-		"user": "ana", "status": "ok", "duration": 910, "tags": []string{"ci"},
-		"stdout": "Compiling core...\nDone.",
-	}, mustTime("20261107T140210.120Z")))
-	must(w.WriteAt("build", struct {
-		User     string   `trak:"user"`
-		Status   string   `trak:"status"`
-		Duration float64  `trak:"duration"`
-		Tags     []string `trak:"tags"`
-		Stdout   []byte   `trak:"stdout"`
-		Error    *string  `trak:"error"`
-		private  int
-	}{"joel", "failed", 1520, []string{"ci", "nightly"}, []byte("Compiling core...\nld: undefined symbol main"), ptr("link failed"), 0},
-		mustTime("20261107T140322.415Z")))
-}
+var t0 = time.Date(2026, 11, 13, 9, 0, 0, 0, time.UTC)
 
-func ptr[T any](v T) *T { return &v }
+func at(i int) time.Time { return t0.Add(time.Duration(i) * time.Second) }
 
-// must returns v, panicking (and so failing the test) on error.
-func must[T any](v T, err error) T {
-	if err != nil {
-		panic(err)
-	}
-	return v
-}
-
-func ok(t testing.TB, err error) {
+func mustCreate(t testing.TB, policy Policy) (*Writer, string) {
 	t.Helper()
+	name := filepath.Join(t.TempDir(), "ci.trak")
+	w, err := Create(name, ciSchema, map[string]any{"name": "ci-1"}, t0, &Options{Policy: policy})
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { w.Close() })
+	return w, name
 }
 
-func TestWriterReproducesSpecExample(t *testing.T) {
-	p := filepath.Join(t.TempDir(), "x.trak")
-	writeExample(t, p)
-	got, _ := os.ReadFile(p)
-	if !bytes.Equal(got, specExample(t)) {
-		t.Fatalf("got\n%s", got)
+func mustAppend(t testing.TB, w *Writer, list string, v any, i int) Append {
+	t.Helper()
+	a, err := w.Append(list, v, at(i))
+	if err != nil {
+		t.Fatalf("append %s: %v", list, err)
+	}
+	return a
+}
+
+func get(t testing.TB, f *File, path string, v uint64) any {
+	t.Helper()
+	x, err := f.Get(path, v)
+	if err != nil {
+		t.Fatalf("get %s at %d: %v", path, v, err)
+	}
+	return x
+}
+
+func str(t testing.TB, f *File, path string, v uint64) string {
+	t.Helper()
+	l, ok := get(t, f, path, v).(Leaf)
+	if !ok {
+		t.Fatalf("%s is not a leaf", path)
+	}
+	return l.String()
+}
+
+func build(i int) map[string]any {
+	return map[string]any{"user": fmt.Sprintf("u%d", i), "log": fmt.Sprintf("line 1\n--[ log ]--\nbuild %d", i),
+		"host": map[string]any{"name": "h", "cores": i}}
+}
+
+func TestRoundTrip(t *testing.T) {
+	for _, policy := range []Policy{Reference, Delta} {
+		t.Run(policy.String(), func(t *testing.T) {
+			w, name := mustCreate(t, policy)
+			n := 0
+			for i := 0; i < 300; i++ {
+				n++
+				mustAppend(t, w, "builds", build(i), n)
+				n++
+				mustAppend(t, w, fmt.Sprintf("builds.%d.status", i), "running", n)
+				if i%3 == 0 {
+					n++
+					mustAppend(t, w, fmt.Sprintf("builds.%d.status", i/2), "ok", n)
+				}
+				if i%50 == 0 {
+					n++
+					mustAppend(t, w, "config.retries", i, n)
+				}
+			}
+			w.Close()
+			f, err := Open(name)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer f.Close()
+			if f.Version() != uint64(n+1) {
+				t.Fatalf("version %d, want %d", f.Version(), n+1)
+			}
+			v := f.Version()
+			if got := str(t, f, "name", v); got != "ci-1" {
+				t.Errorf("name = %q", got)
+			}
+			l := get(t, f, "builds", v).(*List)
+			if l.Len() != 300 {
+				t.Fatalf("builds: %d", l.Len())
+			}
+			for i := 0; i < 300; i++ {
+				if got := str(t, f, fmt.Sprintf("builds.%d.log", i), v); got != fmt.Sprintf("line 1\n--[ log ]--\nbuild %d", i) {
+					t.Fatalf("build %d log = %q", i, got)
+				}
+				if got := str(t, f, fmt.Sprintf("builds.%d.host.cores", i), v); got != fmt.Sprint(i) {
+					t.Fatalf("build %d cores = %q", i, got)
+				}
+			}
+			if got := str(t, f, "builds.-1.user", v); got != "u299" {
+				t.Errorf("last user %q", got)
+			}
+			st := get(t, f, "builds.11.status", v).(*List)
+			if st.Len() != 1 {
+				t.Errorf("builds.11.status: %d", st.Len())
+			}
+			st = get(t, f, "builds.12.status", v).(*List)
+			if st.Len() != 2 || str(t, f, "builds.12.status.1", v) != "ok" {
+				t.Errorf("builds.12.status: %d", st.Len())
+			}
+			// Old versions: at version 3 there was one build with one status.
+			if l := get(t, f, "builds", 3).(*List); l.Len() != 1 {
+				t.Errorf("builds at 3: %d", l.Len())
+			}
+			if l := get(t, f, "builds", 1).(*List); l.Len() != 0 {
+				t.Errorf("builds at 1: %d", l.Len())
+			}
+			if got := str(t, f, "config.retries.-1", v); got != "250" {
+				t.Errorf("retries = %q", got)
+			}
+			// Object versions: build 12 changed twice.
+			b := get(t, f, "builds.12", v).(*Object)
+			if k, _ := b.K(); k != 2 {
+				t.Errorf("build 12 k = %d", k)
+			}
+			b0, err := b.Version(0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if l, _ := b0.List("status"); l.Len() != 0 {
+				t.Errorf("build 12 at k=0 has %d statuses", l.Len())
+			}
+			cfg := get(t, f, "config", v).(*Object)
+			k, _ := cfg.K()
+			if k != 5 {
+				t.Errorf("config k = %d", k)
+			}
+			for j := uint64(0); j <= k; j++ {
+				c, err := cfg.Version(j)
+				if err != nil {
+					t.Fatal(err)
+				}
+				l, _ := c.List("retries")
+				if l.Len() != j+1 {
+					t.Errorf("config version %d has %d retries", j, l.Len())
+				}
+			}
+			var seen []uint64
+			if err := l.Range(5, 40, func(m uint64, item any) error {
+				seen = append(seen, m)
+				if item.(*Object).Path() != fmt.Sprintf("builds.%d", m) {
+					t.Errorf("range item %d", m)
+				}
+				return nil
+			}); err != nil {
+				t.Fatal(err)
+			}
+			if len(seen) != 35 || seen[0] != 5 || seen[34] != 39 {
+				t.Errorf("range: %v", seen)
+			}
+			if err := Check(name, nil); err != nil {
+				t.Fatalf("check: %v", err)
+			}
+		})
 	}
 }
 
-func TestReaderOnSpecExample(t *testing.T) {
-	p := filepath.Join(t.TempDir(), "x.trak")
-	os.WriteFile(p, specExample(t), 0o644)
-	r := must(Open(p))
-	defer r.Close()
-	if r.Version() != "1.1" || len(r.Types()) != 2 || r.End() != r.Size() {
-		t.Fatal("header")
-	}
-	builds := must(r.Table("build"))
-	if n := must(builds.Count()); n != 2 {
-		t.Fatalf("count %d", n)
-	}
-	e := must(builds.Get(1))
-	if e.Type() != "build" || e.N() != 1 || e.Offset() != 423 || e.Timestamp() != "20261107T140210.120Z" {
-		t.Fatal("event header")
-	}
-	if tm := must(e.Time()); !tm.Equal(time.Date(2026, 11, 7, 14, 2, 10, 120e6, time.UTC)) {
-		t.Fatal(tm)
-	}
-	if v, ok, _ := e.Get("user"); v != "ana" || !ok {
-		t.Fatal("user")
-	}
-	if v, ok, _ := e.Int("duration"); v != 910 || !ok {
-		t.Fatal("duration")
-	}
-	if v, ok, _ := e.Float("duration"); v != 910 || !ok {
-		t.Fatal("duration float")
-	}
-	if _, ok, _ := e.Get("error"); ok {
-		t.Fatal("error should be absent")
-	}
-	if _, ok, _ := e.Int("error"); ok {
-		t.Fatal("error should be absent")
-	}
-	if raw, _, _ := e.Raw("stdout"); string(raw) != "Compiling core...\nDone." {
-		t.Fatal("stdout")
-	}
-	latest := must(builds.Latest())
-	leaves := must(latest.Leaves())
-	if len(leaves) != 7 || leaves[4].Path != "tags.1" || string(leaves[4].Value) != "nightly" {
-		t.Fatalf("%+v", leaves)
-	}
-	deploys := must(r.Table("deploy"))
-	if n := must(deploys.Count()); n != 0 {
-		t.Fatal("deploys")
-	}
-	if e := must(deploys.Latest()); e != nil {
-		t.Fatal("latest deploy")
-	}
-	if _, err := r.Table("nope"); !errors.Is(err, ErrNotFound) {
-		t.Fatal(err)
-	}
-	if _, err := builds.Get(3); !errors.Is(err, ErrNotFound) {
-		t.Fatal(err)
-	}
-	if n := must(Check(p)); n != 4 {
-		t.Fatal(n)
-	}
-}
-
-func manyFile(t testing.TB) string {
-	p := filepath.Join(t.TempDir(), "many.trak")
-	w := must(Create(p, Options{}))
-	must(w.Define("a", "{ i: num }"))
-	must(w.Define("b", "{ s: str }"))
-	must(w.Define("c", "{ }"))
-	for i := 1; i <= 2000; i++ {
-		ts := fromMillis(1_000_000 + int64(i)*10)
-		must(w.WriteAt("a", map[string]any{"i": i}, ts))
-		if i%3 == 0 {
-			must(w.WriteAt("b", map[string]any{"s": fmt.Sprintf("s%d", i)}, ts))
+func TestDeltaIsSmaller(t *testing.T) {
+	size := map[Policy]int64{}
+	for _, policy := range []Policy{Reference, Delta} {
+		w, name := mustCreate(t, policy)
+		for i := 0; i < 2000; i++ {
+			mustAppend(t, w, "builds", build(i), i)
+			mustAppend(t, w, fmt.Sprintf("builds.%d.status", i), "ok", i)
 		}
+		w.Close()
+		st, _ := os.Stat(name)
+		size[policy] = st.Size()
+	}
+	if size[Delta] >= size[Reference] {
+		t.Errorf("delta %d, reference %d", size[Delta], size[Reference])
+	}
+	t.Logf("reference %d bytes, delta %d bytes", size[Reference], size[Delta])
+}
+
+func TestTornTail(t *testing.T) {
+	w, name := mustCreate(t, Reference)
+	for i := 0; i < 20; i++ {
+		mustAppend(t, w, "builds", build(i), i)
 	}
 	w.Close()
-	return p
-}
-
-func TestNavigation(t *testing.T) {
-	p := manyFile(t)
-	r := must(Open(p))
-	defer r.Close()
-	a := must(r.Table("a"))
-	for n := int64(1); n <= 2000; n++ {
-		e := must(a.Get(n))
-		if v, _, _ := e.Int("i"); v != n {
-			t.Fatalf("event %d has i=%d", n, v)
+	good, _ := os.ReadFile(name)
+	for _, tail := range []string{"user: x\n", "==[ builds.20 22 20261113T090000.000Z ]==BAB\n", "--[ log ]--\nbody\n==[ x"} {
+		os.WriteFile(name, append(append([]byte(nil), good...), tail...), 0o644)
+		f, err := Open(name)
+		if err != nil {
+			t.Fatal(err)
 		}
-	}
-	for _, n := range []int64{1, 2, 777, 1999, 2000} {
-		clear(r.cache)
-		clear(r.oldCache)
-		before := r.FooterReads
-		must(a.Get(n))
-		if reads := r.FooterReads - before; reads > 3*11+4 {
-			t.Errorf("get(%d) read %d footers", n, reads)
+		if f.Version() != 21 || f.Size() != int64(len(good)) {
+			t.Errorf("tail %q: version %d size %d", tail, f.Version(), f.Size())
 		}
-	}
-	var got []int64
-	ok(t, a.Range(5, 600, func(e *Event) bool { got = append(got, e.N()); return true }))
-	if len(got) != 596 || got[0] != 5 || got[595] != 600 {
-		t.Fatal("range up")
-	}
-	got = nil
-	ok(t, a.Range(600, 590, func(e *Event) bool { got = append(got, e.N()); return len(got) < 5 }))
-	if fmt.Sprint(got) != "[600 599 598 597 596]" {
-		t.Fatal(got)
-	}
-	if err := a.Range(0, 3, func(*Event) bool { return true }); !errors.Is(err, ErrNotFound) {
-		t.Fatal(err)
-	}
-	if e := must(a.AtTime(fromMillis(1_000_000 + 105))); e.N() != 11 {
-		t.Fatal(e.N())
-	}
-	if e := must(a.AtTime(fromMillis(1_000_000 + 20_011))); e != nil {
-		t.Fatal("past the end")
-	}
-	if b := must(r.Table("b")); must(b.Count()) != 666 {
-		t.Fatal("b")
-	}
-	if n := must(Check(p)); n != 3+2000+666 {
-		t.Fatal(n)
-	}
-}
-
-func TestNumFormats(t *testing.T) {
-	cases := []struct {
-		v    any
-		want string
-	}{
-		{0, "0"}, {-12, "-12"}, {uint64(math.MaxUint64), "18446744073709551615"}, {0.1, "0.1"},
-		{1e16, "1e+16"}, {float32(0.5), "0.5"}, {json.Number("1.5e3"), "1.5e3"}, {"-0", "-0"}, {[]byte("2"), "2"},
-	}
-	for _, c := range cases {
-		p := filepath.Join(t.TempDir(), "n.trak")
-		w := must(Create(p, Options{}))
-		must(w.Define("t", "{ x: num }"))
-		must(w.Write("t", map[string]any{"x": c.v}))
+		f.Close()
+		w, err := OpenWriter(name, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		mustAppend(t, w, "builds", build(99), 30)
 		w.Close()
-		r := must(Open(p))
-		e := must(must(r.Table("t")).Get(1))
-		if v, _, _ := e.Get("x"); v != c.want {
-			t.Errorf("%v: got %s, want %s", c.v, v, c.want)
+		if err := Check(name, nil); err != nil {
+			t.Errorf("tail %q: check: %v", tail, err)
 		}
-		r.Close()
 	}
 }
 
 func TestValueErrors(t *testing.T) {
-	p := filepath.Join(t.TempDir(), "e.trak")
-	w := must(Create(p, Options{}))
-	defer w.Close()
-	must(w.Define("t", "{ x: num, e: enum(a, b)?, s: str?, l: [] str?, m: {} str?, o: {y: str}? }"))
-	cases := []struct {
-		v   map[string]any
-		msg string
+	w, _ := mustCreate(t, Reference)
+	mustAppend(t, w, "builds", build(0), 1)
+	bad := []struct {
+		list string
+		v    any
+		want string
 	}{
-		{map[string]any{"x": "01"}, "not a valid num"},
-		{map[string]any{"x": math.NaN()}, "finite"},
-		{map[string]any{"x": math.Inf(1)}, "finite"},
-		{map[string]any{"x": true}, "bool"},
-		{map[string]any{"x": []int{1}}, "decimal string"},
-		{map[string]any{"x": 1, "e": "z"}, "not one of a, b"},
-		{map[string]any{"x": 1, "e": 3}, "needs a string"},
-		{map[string]any{"x": 1, "s": 3}, "needs a string"},
-		{map[string]any{"x": 1, "l": "ab"}, "expected a list"},
-		{map[string]any{"x": 1, "m": 3}, "expected a map"},
-		{map[string]any{"x": 1, "m": []any{[]any{"a"}}}, "pairs"},
-		{map[string]any{"x": 1, "m": map[int]string{1: "a"}}, "keys must be strings"},
-		{map[string]any{"x": 1, "m": Pairs{{"a", "1"}, {"a", "2"}}}, "repeated map key"},
-		{map[string]any{"x": 1, "o": 5}, "expected an object"},
-		{map[string]any{"x": 1, "zzz": 1}, "unknown field 'zzz'"},
-		{map[string]any{}, "x: value is required"},
-		{map[string]any{"x": 1, "o": map[string]any{}}, "o.y: value is required"},
+		{"builds", map[string]any{"user": "x"}, "log is missing"},
+		{"builds", map[string]any{"user": "x", "log": "", "host": map[string]any{"name": "h", "cores": "1.5.2"}}, "not a num"},
+		{"builds.0.status", "maybe", "not one of"},
+		{"builds", map[string]any{"user": "x", "log": "", "host": map[string]any{"name": "h"}, "parent": "builds.7"}, "item 7"},
+		{"builds", map[string]any{"user": "x", "log": "", "host": map[string]any{"name": "h"}, "nope": 1}, "no field nope"},
+		{"builds.3.status", "ok", "no item 3"},
+		{"name", "x", "holds no event lists"},
+		{"builds", map[string]any{"user": "x", "log": "", "host": map[string]any{"name": "h"}, "status": "ok"}, "append its items separately"},
 	}
-	for _, c := range cases {
-		_, err := w.Write("t", c.v)
-		var ve *ValueError
-		if !errors.As(err, &ve) || !strings.Contains(ve.Msg, c.msg) {
-			t.Errorf("%v: got %v, want %q", c.v, err, c.msg)
+	for _, c := range bad {
+		_, err := w.Append(c.list, c.v, at(5))
+		if err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("%s %v: %v, want %q", c.list, c.v, err, c.want)
 		}
 	}
-	if p := must(w.Write("t", map[string]any{"x": 1})); p.N != 1 {
-		t.Fatal(p)
+	if _, err := w.Append("builds.0.status", "ok", t0.Add(-time.Hour)); err == nil {
+		t.Error("an earlier timestamp was accepted")
 	}
-	if _, err := w.Write("nope", nil); err == nil {
-		t.Fatal("undefined type")
+	a := mustAppend(t, w, "builds", map[string]any{"user": "x", "log": "", "host": map[string]any{"name": "h"}, "parent": "builds.0"}, 6)
+	if a.Version != 3 || a.Path != "builds.1" {
+		t.Errorf("append = %+v", a)
+	}
+	var ve *ValueError
+	if _, err := w.Append("builds", nil, at(7)); !errors.As(err, &ve) {
+		t.Errorf("nil item: %v", err)
 	}
 }
 
-func TestTimestamps(t *testing.T) {
-	p := filepath.Join(t.TempDir(), "t.trak")
-	w := must(Create(p, Options{}))
-	must(w.Define("t", "{}"))
-	must(w.WriteAt("t", map[string]any{}, mustTime("20991231T235959.999Z")))
-	must(w.Write("t", map[string]any{}))
-	if _, err := w.WriteAt("t", map[string]any{}, mustTime("20991231T235959.998Z")); err == nil {
-		t.Fatal("backwards timestamp accepted")
+func TestVersionAtTime(t *testing.T) {
+	w, _ := mustCreate(t, Reference)
+	for i := 0; i < 100; i++ {
+		mustAppend(t, w, "builds", build(i), i/3*10)
 	}
-	w.Close()
-	r := must(Open(p))
-	defer r.Close()
-	e := must(must(r.Table("t")).Get(2))
-	if e.Timestamp() != "20991231T235959.999Z" {
-		t.Fatal(e.Timestamp())
-	}
-	for _, bad := range []string{"20261332T000000.000Z", "20230229T000000.000Z", "00000101T000000.000Z",
-		"20260101T240000.000Z", "20260101T000060.000Z", "2026-01-01", "20260101T000000.000"} {
-		if _, err := ParseTimestamp(bad); err == nil {
-			t.Errorf("%s accepted", bad)
+	f := w.File()
+	for i := 0; i < 100; i++ {
+		want := uint64(i/3*3) + 2 // the first append at that second
+		if i < 3 {
+			want = 1 // the root shares the first second
+		}
+		got, err := f.VersionAt(at(i / 3 * 10))
+		if err != nil || got != want {
+			t.Fatalf("time of %d: %d %v, want %d", i, got, err, want)
 		}
 	}
-}
-
-func TestDefineErrors(t *testing.T) {
-	w := must(Create(filepath.Join(t.TempDir(), "s.trak"), Options{}))
-	defer w.Close()
-	must(w.Define("a", "{}"))
-	for name, def := range map[string]string{"a": "{}", "trak.x": "{}", "1x": "{}", "b": "{ x: foo }"} {
-		if _, err := w.Define(name, def); err == nil {
-			t.Errorf("Define(%q) succeeded", name)
-		}
+	if v, _ := f.VersionAt(at(10000)); v != 0 {
+		t.Errorf("after the end: %d", v)
 	}
-	if len(w.Types()) != 1 {
-		t.Fatal(w.Types())
-	}
-}
-
-func TestCreateAndLock(t *testing.T) {
-	p := filepath.Join(t.TempDir(), "x.trak")
-	os.WriteFile(p, []byte("precious"), 0o644)
-	if _, err := Create(p, Options{}); !errors.Is(err, os.ErrExist) {
-		t.Fatal(err)
-	}
-	w := must(Create(p, Options{Overwrite: true, Sync: true}))
-	if _, err := OpenAppend(p, Options{}); !errors.Is(err, ErrLocked) {
-		t.Fatalf("second writer: %v", err)
-	}
-	r := must(Open(p))
-	r.Close()
-	must(w.Define("a", "{}"))
-	ok(t, w.Flush())
-	w.Close()
-	if _, err := w.Define("b", "{}"); !errors.Is(err, ErrClosed) {
-		t.Fatal(err)
-	}
-	if runtime.GOOS != "windows" {
-		if st, _ := os.Stat(p); st.Mode()&0o111 != 0 {
-			t.Fatal("file is executable")
-		}
-	}
-}
-
-func TestAppendContinuesIdentically(t *testing.T) {
-	dir := t.TempDir()
-	whole := filepath.Join(dir, "whole.trak")
-	writeExample(t, whole)
-	data, _ := os.ReadFile(whole)
-	split := filepath.Join(dir, "split.trak")
-	// Cut after the first event, reopen, write the second.
-	cut := bytes.Index(data, []byte("user: joel"))
-	os.WriteFile(split, data[:cut], 0o644)
-	w := must(OpenAppend(split, Options{}))
-	must(w.WriteAt("build", map[string]any{
-		"user": "joel", "status": "failed", "duration": 1520, "tags": []string{"ci", "nightly"},
-		"stdout": "Compiling core...\nld: undefined symbol main", "error": "link failed",
-	}, mustTime("20261107T140322.415Z")))
-	w.Close()
-	got, _ := os.ReadFile(split)
-	if !bytes.Equal(got, data) {
-		t.Fatal("append differs")
-	}
-}
-
-func TestAppendMany(t *testing.T) {
-	p := filepath.Join(t.TempDir(), "x.trak")
-	w := must(Create(p, Options{}))
-	for _, n := range "abcde" {
-		must(w.Define(string(n), "{ i: num }"))
-	}
-	w.Close()
-	for round := 0; round < 20; round++ {
-		w := must(OpenAppend(p, Options{}))
-		for i := 0; i < 37; i++ {
-			must(w.Write(string("abcde"[(i*7+round)%5]), map[string]any{"i": i}))
-		}
-		if round == 10 {
-			must(w.Define("late", "{}"))
-			must(w.Write("late", map[string]any{}))
-		}
-		w.Close()
-		must(Check(p))
-	}
-}
-
-func TestTornTail(t *testing.T) {
-	p := filepath.Join(t.TempDir(), "x.trak")
-	good := specExample(t)
-	complete := "==[ build 3 20261107T140322.415Z ]==fQBB\n"
-	for _, tail := range []string{"user: x\nstat", "==[ build 3 2026", complete} {
-		os.WriteFile(p, append(append([]byte(nil), good...), tail...), 0o644)
-		r := must(Open(p))
-		if r.End() != int64(len(good)) || must(must(r.Table("build")).Count()) != 2 {
-			t.Fatal("recovery")
-		}
-		r.Close()
-		_, err := Check(p)
-		if (tail == complete) != (err != nil) {
-			t.Fatalf("check with tail %q: %v", tail, err)
-		}
-		w := must(OpenAppend(p, Options{}))
-		w.Close()
-		if got, _ := os.ReadFile(p); !bytes.Equal(got, good) {
-			t.Fatal("tail not truncated")
-		}
-	}
-}
-
-func TestEmptyAndMagicOnly(t *testing.T) {
-	dir := t.TempDir()
-	p := filepath.Join(dir, "x.trak")
-	must(Create(p, Options{})).Close()
-	q := filepath.Join(dir, "empty.trak")
-	os.WriteFile(q, nil, 0o644)
-	for _, path := range []string{p, q} {
-		w := must(OpenAppend(path, Options{}))
-		must(w.Define("a", "{}"))
-		w.Close()
-	}
-	a, _ := os.ReadFile(p)
-	b, _ := os.ReadFile(q)
-	if !bytes.Equal(a, b) {
-		t.Fatal("differ")
-	}
-}
-
-func TestRefresh(t *testing.T) {
-	p := filepath.Join(t.TempDir(), "x.trak")
-	w := must(Create(p, Options{}))
-	defer w.Close()
-	r := must(Open(p))
-	defer r.Close()
-	if changed := must(r.Refresh()); changed {
-		t.Fatal("nothing changed")
-	}
-	must(w.Define("a", "{ i: num }"))
-	must(w.Write("a", map[string]any{"i": 1}))
-	if !must(r.Refresh()) {
-		t.Fatal("refresh")
-	}
-	tab := must(r.Table("a"))
-	must(w.Write("a", map[string]any{"i": 2}))
-	must(r.Refresh())
-	if n := must(tab.Count()); n != 2 {
-		t.Fatal(n)
-	}
-}
-
-func TestBadMagic(t *testing.T) {
-	p := filepath.Join(t.TempDir(), "x.trak")
-	for data, msg := range map[string]string{"": "empty", "trac 1.0\n": "magic", "trak 1.0": "magic",
-		"trak 01.0\n": "magic", "trak 2.0\n": "major"} {
-		os.WriteFile(p, []byte(data), 0o644)
-		_, err := Open(p)
-		var fe *FormatError
-		if !errors.As(err, &fe) || !strings.Contains(err.Error(), msg) {
-			t.Errorf("%q: %v", data, err)
-		}
-	}
-	os.WriteFile(p, []byte("trak 2.0\n"), 0o644)
-	var uv *UnsupportedVersionError
-	if _, err := Open(p); !errors.As(err, &uv) || uv.Version != "2" {
-		t.Fatal(err)
-	}
-}
-
-func TestUnparseableSchema(t *testing.T) {
-	p := filepath.Join(t.TempDir(), "x.trak")
-	w := must(Create(p, Options{}))
-	must(w.Define("t", "{ a: str }"))
-	must(w.Write("t", map[string]any{"a": "x"}))
-	w.Close()
-	data, _ := os.ReadFile(p)
-	os.WriteFile(p, bytes.Replace(data, []byte("{ a: str }"), []byte("{ a: s?? }"), 1), 0o644)
-	r := must(Open(p))
-	tab := must(r.Table("t"))
-	if n := must(tab.Count()); n != 1 || tab.Schema.Err == nil {
-		t.Fatal("navigation")
-	}
-	var se *SchemaError
-	if _, _, err := must(tab.Get(1)).Get("a"); !errors.As(err, &se) {
-		t.Fatal(err)
-	}
-	r.Close()
-	if _, err := Check(p); err == nil {
-		t.Fatal("check passed")
-	}
-	w = must(OpenAppend(p, Options{}))
-	defer w.Close()
-	if _, err := w.Write("t", map[string]any{"a": "y"}); !errors.As(err, &se) {
-		t.Fatal(err)
+	if v, _ := f.VersionAt(t0.Add(-time.Hour)); v != 1 {
+		t.Errorf("before the start: %d", v)
 	}
 }

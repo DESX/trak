@@ -1,314 +1,180 @@
-# trak 1.1
+# trak 1.2
 
-**trak is a log format that programs write and read, and people can read too.** A person can scroll, scan and grep a trak file. A program can reach any event, row or field in a few reads, and never mistakes content for structure.
+trak is an append-only, human-readable text file holding one versioned tree of structured data. Every append creates a complete new version of the tree, and any field of any version is reached in O(log n) reads.
 
 | Guarantee | How |
 |---|---|
-| Unambiguous | Every boundary comes from lengths in footers. Logged content cannot forge structure. |
-| Strings untouched | `str` values are copied: never escaped, scanned or validated. |
-| Tabular | Each event type is a table: one row per event, one column per field. |
-| Fast | Any row is reached in O(log n) footer reads. |
-| Greppable | Plain text, with footers that are easy to spot or exclude. |
+| Unambiguous | Boundaries come from lengths in footers. Content can't forge structure. |
+| Strings untouched | Values are copied, never escaped or inspected. |
+| Versioned | Every append is a full version. Old versions stay readable forever. |
+| Fast | Any field, list item or version in O(log n) reads. No scans. |
+| Greppable | Plain text. Each footer names the path it writes. |
 
 ## 1. Model
 
-- A file holds **schemas** and **events**. Each event has a **type**, and each type has exactly one schema per file.
-- Order is meaningful only within a type or a family. Otherwise events of different types may interleave, and no relation between them is implied.
-- A **family** is a type and all of its descendants: `build.step` is a child of `build`, and `build.step.compile` a child of `build.step`. A child has its parent's fields, then its own. The family of `build` holds the events of all three types, in file order, and is a table of its own.
-- Within a family, timestamps never decrease. A type with no children is a family of one.
+- A file describes one root object, defined by its schema.
+- An object has named fields. A field is a leaf, a nested object, or an event list.
+- Leaves are `str`, `num`, `enum(a, b, …)` and `path`. `|str` is a `str` laid out as a block.
+- An event list (`event T`) is an append-only list of T, an object or a leaf. Items are numbered from 0. An item's leaves never change once written, but its own event lists can grow.
+- Plain fields (leaves and nested objects) are set when their object is written and never change. Anything that changes over time is an event list, and its current value is its latest item.
+- A version is the state of the root after one append. Version 0 is the empty root. Version 1 writes the root's own leaves. Every later append adds one item to one event list.
+- A path names any value: `sessions.12.turns.4999.reply`. Stored paths use item numbers from 0. In lookups, negative numbers count back from the latest item (-1).
+- Order is file order, across the whole tree. Each append's timestamp is its commit time and never decreases.
 
-## 2. Versions
+## 2. Schema language
 
-trak uses semantic versioning, `MAJOR.MINOR.PATCH`.
+| Syntax | Meaning |
+|---|---|
+| `object name { … }` | A reusable object type |
+| `root name { … }` | The file's root. Exactly one. |
+| `field: T,` | A member. Trailing commas are allowed. |
+| `str`, `num`, `enum(a, b)`, `path` | Leaves. A `path` holds the path of an earlier value. |
+| `\|str` | A block leaf |
+| `T?` | Optional, for leaves and nested objects |
+| `{ … }` | An inline object |
+| `event T` | An append-only list of T |
+| `# text` | A description: on lines before an object or a field, or after a field on its first line |
 
-| Part | Changes | Reader rule |
-|---|---|---|
-| MAJOR | framing | refuse a file with an unknown major |
-| MINOR | additions older readers can skip | read using the rules in §9 |
-| PATCH | wording only, never bytes | none |
+- Names match `[A-Za-z_][A-Za-z0-9_]*`. `num` values match `-?(0|[1-9][0-9]*)(\.[0-9]+)?([eE][+-]?[0-9]+)?`. Enum words are names.
+- Types may be defined in any order. No type may contain itself, directly or through event lists, so the tree's depth is fixed by the schema. An unknown type name is an error.
+- Descriptions are part of the schema, and APIs and viewers expose them.
 
-The magic line carries the writer's `MAJOR.MINOR`. Each schema footer carries the `MAJOR.MINOR` its definition uses.
+```
+# A CI server.
+root ci {
+  name: str,
+  builds: event build,
+}
+
+# One build.
+object build {
+  user: str,                   # who started it
+  status: event enum(running, ok, failed),
+  log: |str,
+}
+```
 
 ## 3. File layout
 
 ```
-trak 1.1     magic line
-<objects>    schemas and events
+trak 1.2                               magic line
+##[ schema ]##<VLQs>                   schema header, then the schema text
+<appends>                              each a body, then ==[ <path> <version> <timestamp> ]==<VLQs>
 ```
 
-Every object is a **body** followed by one **footer line**. Lines end with LF.
+Lines end with LF. Lengths and offsets are in bytes.
 
 | Marker | Line |
 |---|---|
-| `##[ … ]##` | schema footer |
-| `==[ … ]==` | event footer |
-| `--[ … ]--` | block label, inside an event body |
+| `##[ schema ]##` | Schema header |
+| `==[ … ]==` | Append footer |
+| `--[ path ]--` | Block start, inside a body |
+| `--[ /path ]--` | Block end, inside a body |
 
-## 4. Encoding
+**Schema.** The header line is `##[ schema ]##` followed by VLQs: the schema text's length, then an extension count E and E VLQs. The schema text follows it and ends with LF. It is the only schema: a file's schema never changes.
 
-| Item | Rule |
-|---|---|
-| Framing (footers, schemas, paths) | ASCII, except map keys within paths |
-| Values and map keys | raw bytes, normally UTF-8 |
-| Lengths and offsets | bytes |
-
-### Letter VLQ
-
-Every machine number is an unsigned variable-length quantity written in letters: base 26, most significant digit first.
-
-| Digit | Meaning |
-|---|---|
-| `a`–`z` | value 0–25, more digits follow |
-| `A`–`Z` | value 0–25, last digit |
-
-VLQs are concatenated with no separators. A VLQ never starts with `a`, so each value has exactly one encoding.
-
-| Value | 0 | 25 | 26 | 148 | 1520 | 52310 |
-|---|---|---|---|---|---|---|
-| VLQ | `A` | `Z` | `bA` | `fS` | `cgM` | `czjY` |
-
-### Pointers
-
-A pointer stores `(this object's start − target object's end) + 1`. `0` means none.
-
-## 5. Schemas
-
-### Types
-
-| Syntax | Meaning |
-|---|---|
-| `str` | string, never inspected |
-| `num` | decimal number matching `-?(0\|[1-9][0-9]*)(\.[0-9]+)?([eE][+-]?[0-9]+)?` |
-| `enum(a, b, …)` | one of the listed words |
-| `\|T` | leaf `T`, laid out as a block |
-| `{ a: A, b: B, … }` | object with fixed keys |
-| `{} T` | map: any keys, every value `T` |
-| `[] T` | list: any length, every element `T` |
-| `T?` | optional: `T` or absent |
-| `T @name`, `T @name(text)` | annotation |
-
-- A type is written as prefixes, a base, then suffixes. The prefixes `|`, `{}` and `[]` apply to the type after them. The suffixes `?` and `@` apply to the whole type before them, so `[] str?` is an optional list and `[] str @x` annotates the list.
-- `{}` followed by a type is the map prefix. Otherwise it is an empty object, which has no leaves.
-- `str`, `num` and `enum` are **leaves**. Writers validate `num` and `enum` values. Readers may.
-- An event's top-level type is an object. Keys and enum words match `[A-Za-z_][A-Za-z0-9_]*`. Trailing commas are allowed.
-- An **annotation** name matches `[A-Za-z_][A-Za-z0-9_.-]*`, and its text contains no `)` or LF. trak passes annotations to applications unchanged, and trak 1.1 defines none. A name defined by a later minor version has that meaning only in schemas that declare that version or later.
-- `//` starts a comment. A comment ending a field's line is that field's **description**. Comment lines before the opening `{` are the type's description. APIs expose both.
-
-### Schema objects
-
-A schema's body is its definition, ending with LF. Its footer:
-
-```
-##[ <name> <index> <version> ]##<VLQs>
-```
-
-| Field | Meaning |
-|---|---|
-| `name` | type name, `[A-Za-z_][A-Za-z0-9_.]*`, unique in the file. Prefix `trak.` is reserved. |
-| `index` | type index, decimal: 1, 2, … in file order |
-| `version` | `MAJOR.MINOR` the definition uses |
-
-| # | VLQ | Meaning |
-|---|---|---|
-| 1 | body length | bytes from schema start to footer start |
-| 2 | previous schema | pointer to the preceding schema, `0` for the first |
-| 3 | extension count `E` | `0` in trak 1.1 |
-| 4… | extensions | `E` VLQs |
-
-- A type's schema appears anywhere before its first event.
-- A schema declaring `1.1` or later whose name is `P.x` is a **child** of type `P`, whose schema must appear earlier. Its definition lists only its own members, and its top-level object is `P`'s members followed by them. A member key that `P` already has is an error. A child's description and top-level annotations are its own.
-- In a schema declaring `1.0`, a `.` in a name is just a character.
-- The schema is node 0 of its type's chain. Events are nodes 1, 2, …
-- Schemas link through *previous schema*. Type index 0 refers to this chain.
-
-## 6. Events
-
-### Body
-
-Leaves are written in schema order, depth first.
+**Append.** A body, then a footer line. The body holds the item's leaves, in schema order, depth first:
 
 | Leaf | Written as |
 |---|---|
-| inline | `path: value` LF |
-| block | value, LF, `--[ path ]--` LF |
-| absent, or in an empty list or map | nothing |
+| Inline | `path: value` LF |
+| Block | `--[ path ]--` LF, value, LF, `--[ /path ]--` LF |
+| Absent | Nothing |
 
-`path` joins keys and list indexes with `.`, e.g. `tags.1` or `env.region`. Map keys are copied raw, and appear only in the paths of their entry's leaves. If an entry has no leaves, its key is unknown to readers. Inline values should be single-line; readers are unaffected either way.
+The path is relative to the item, such as `context.used`. An item of a leaf list is written with the list's name as its path. The root append writes the root's leaves.
 
-### Footer
+**Footer.** `==[ <path> <version> <timestamp> ]==` followed by VLQs (§5). The path is the new item's path, such as `sessions.12.turns.4999`, or the root's name for version 1. The version is decimal. The timestamp is UTC, `YYYYMMDDTHHMMSS.sssZ`.
 
-```
-==[ <type> <n> <timestamp> ]==<VLQs>
-```
+## 4. Encoding
 
-| Field | Meaning |
-|---|---|
-| `type` | type name |
-| `n` | per-type event number, decimal, from 1 |
-| `timestamp` | UTC, `YYYYMMDDTHHMMSS.sssZ` |
+Framing is ASCII except paths' item segments, which are decimal. Values are raw bytes, normally UTF-8.
 
-| # | VLQ | Meaning |
+**Letter VLQ.** Every machine number is an unsigned base-26 number written in letters, most significant digit first. a–z are 0–25 with more digits following; A–Z are 0–25 and end the number. A VLQ never starts with a. Examples: 0 = `A`, 25 = `Z`, 26 = `bA`, 1520 = `cgM`.
+
+**References.** An append is referred to by one VLQ d: 0 means none, and d > 0 is the append whose footer line ends d − 1 bytes before this append's body starts. So d = 1 is the append just before.
+
+**Pointers.** A pointer to a node is two VLQs, d and i. d = 0, i = 0 is none. d = 0, i > 0 is node i of this footer. d > 0, i > 0 is node i of append d.
+
+## 5. Nodes
+
+Each footer holds only the nodes that changed: the root, then each node on the path down to the new item. This is path copying: every unchanged part of the tree is reached through pointers to earlier nodes. Nodes are numbered from 1, root first, item last.
+
+Footer VLQs, in order:
+
+1. Body length.
+2. Version jump: a reference to the append of version J(v) (§6), 0 for version 0.
+3. Extension count E, then E VLQs.
+4. The item's leaf lengths, in schema order. An optional leaf is 0 if absent, else 1 then its length. An optional nested object is 0 if absent, else 1 then its leaves.
+5. The nodes.
+
+A footer's nodes follow from its path and the schema, so they carry no type tags. A node exists for the root, for each event list's trie levels, for each item, and for each nested object that contains an event list.
+
+**Object node.** Items and nested objects. The root node has only slots.
+
+| # | Field | Meaning |
 |---|---|---|
-| 1 | body length | bytes from event start to footer start |
-| 2 | step | pointer to node `n − 1` of this type |
-| 3 | jump | pointer to node `J(n)` of this type (§7) |
-| 4 | dir pointer | pointer to the latest node of type `dir type` |
-| 5 | dir type | type index, 0 for the schema chain |
-| 6 | extension count `E` | the event's family numbers (below), then any later extensions |
-| 7… | extensions, then values | `E` VLQs, then the values below in schema order, depth first |
+| 1 | k | This object's version count: 0 when created, +1 each time it changes |
+| 2 | prev | Pointer to its previous version, none at creation |
+| 3 | jump | Pointer to its version J(k), none when k = 0 |
+| 4 | leaves | Items only: a reference to the append holding its leaves, 0 for this one |
+| 5 | slots | One slot per event field and per nested object that contains an event list, in schema order |
 
-| Shape | VLQs |
+A slot for an event field is a list node: the item count, then a pointer to the root of the list's item trie, none if empty. A slot for a nested object is a pointer to its object node, none until one of its lists first changes; its first node has k = 0.
+
+**Leaf item node.** An item of a leaf list has an empty node: no VLQs. Its value is its append's body.
+
+**Item trie.** A persistent vector with fanout 16. A list of c items has a trie of depth h, the smallest h ≥ 1 with 16^h ≥ c. Item m is found by its base-16 digits, most significant first. Entries at the bottom level point to the latest version of each item; entries above point to trie nodes.
+
+**Forms.** Trie nodes and slots have one of two forms:
+
+| Form | VLQs |
 |---|---|
-| leaf | value byte length |
-| `T?` | `0` if absent, else `1` then `T`'s VLQs |
-| object | each member's VLQs in order |
-| `[] T` | count, then each element's VLQs |
-| `{} T` | count, then per entry: key byte length, value's VLQs |
+| 0, full | 0, the entry count n, then n entries |
+| 1, delta | 1, a base pointer, a bitmap of the entries written here, then those entries |
 
-### Family numbers
+In a delta, bit j of the bitmap set means entry j is written here; other entries come from the base. The base must be a full node of the same kind. A full slots form always holds every slot, so its n is the slot count. A delta may write an entry past its base's count, and then every entry before it is in the base or written. Bitmaps are VLQs.
 
-An event's **family number** in family `A` is its 1-based position among the events of `A`, in file order. The extensions of an event of type `T` are its family numbers in each of `T`'s ancestors, root first, then in `T` itself if `T` has a child whose schema appears before this event. Otherwise the number in `T`'s own family is its `n` and isn't written.
+## 6. Navigation
 
-| Event | `E` | Extensions |
-|---|---|---|
-| `deploy` (no children) | 0 | none |
-| `build`, before any child is defined | 0 | none (its number is `n`) |
-| `build`, after `build.step` is defined | 1 | number in `build` |
-| `build.step` | 1 or 2 | number in `build`, then in `build.step` if it has a child |
-| `build.step.compile` | 2 | numbers in `build` and `build.step` |
-
-Along any type's chain, its numbers in each family strictly increase.
-
-## 7. Navigation
-
-`K` = number of types. Navigation uses only VLQs 1–6, so it works without parsing any schema.
+**Jump.** J(0) = 0. For n ≥ 1, with p = n − 1: J(n) = J(J(p)) if p > J(p) and p − J(p) = J(p) − J(J(p)), otherwise J(n) = p. To reach m < n, take the jump when its target is ≥ m, otherwise the previous one. Version jumps use the footer's reference; object versions use the node's prev and jump.
 
 | Need | Method | Cost |
 |---|---|---|
-| Previous object | start = footer start − body length | free |
-| Event `m` of type T | step and jump from any node of T | O(log n) |
-| Schema of T | step and jump down to node 0 | O(log n) |
-| Latest event of T | walk back to an event of T, or one with dir type T | ≈ K events |
-| All schemas | dir type 0, then *previous schema* | ≈ 2K reads |
-| Row count of T | latest `n` | ≈ K reads |
-| Seek in T by a key that never decreases along the chain | the walk below | O(log n) |
-| Row count of family A | the largest number in A among its types' latest events | ≈ K reads |
-| Row `m` of family A | seek each of A's `k` types for number `m` in A | O(k log n) |
+| Latest version | The last valid footer | O(1) |
+| Version v | Version jumps from the latest | O(log n) |
+| Version at time t | The same walk on timestamps | O(log n) |
+| Previous version | The append just before this one | 1 read |
+| Item m of a list | Trie walk from its list node | O(log₁₆ n) |
+| Value at a path | Descend: slot, trie, item, at each level | O(depth · log₁₆ n) |
+| Version k of one object | Its prev and jump pointers | O(log n) |
+| Item count | Its list node | Free |
+| An item's leaves | Its leaves reference, then lengths from that footer | 1 read |
 
-**Jump.** `J(0) = 0`. For `n ≥ 1`, with `p = n − 1`: `J(n) = J(J(p))` if `p > J(p)` and `p − J(p) = J(p) − J(J(p))`, otherwise `J(n) = p`. To reach `m < n`, take the jump when its target is `≥ m`, otherwise the step.
+A page of rows reads one footer and one body slice per visible row, plus the trie nodes above them.
 
-**Seek.** To find the first node of T whose key is `≥ m`, for a key that never decreases along the chain (offset, timestamp, a family number), walk down from the latest node; if its key is below `m`, there is none. Take the jump when the jump target's key is `≥ m`, else the step when the step target's key is `≥ m`, else stop. The schema's key is below every `m`. The path is the same as the walk to that node by `n`, plus one read per jump target not taken.
+## 7. Writer policy and bounds
 
-**Directory.** The dir pointer targets the latest node of its type, which is the schema if the type has no events yet. Writers should pick the type covered longest ago, where an event covers its own type and its dir type. Readers must not depend on that policy.
+Readers only follow pointers, so how a writer lays out nodes is a policy. Any policy is valid if every append meets these bounds, which check enforces:
 
-## 8. Reading an event
+- A footer holds exactly the nodes on the changed path.
+- Every entry and slot the append didn't change equals the previous version's.
+- A delta's base is a full node, so any node is at most two reads.
+- Each append is one write.
 
-1. The footer is the object's last line, and contains no LF.
-2. The marker gives the object kind. The VLQs are the letters after `]==` or `]##`.
-3. Start = footer start − body length.
-4. Walk forward from the start using the schema and value lengths. An inline leaf takes `len(path) + 2 + L + 1` bytes and a block leaf `L + 1 + len(path) + 9`. No value byte is read.
-5. The walk ends exactly at the footer start.
+The reference policy writes every node in full form, and every reference writer produces identical bytes with it. Other policies need only pass check, and every reader can read them.
+
+**Writer rules.** Write the magic line, then the schema, then the root append, then appends. Keep timestamps non-decreasing. Validate num, enum and path values: a path must name a value that exists before the append. Never inspect str values.
+
+## 8. Recovery
+
+A crash can leave a torn append at the end of the file. A reader uses the last line that is a valid footer: it parses, its version follows the previous footer's, and its body walk ends at its footer start. Bytes after it are ignored, and a writer reopening the file truncates them.
 
 ## 9. Compatibility
 
 | Reader meets | Reader does |
 |---|---|
-| unknown major in the magic line | refuses the file |
-| schema with a newer minor | reads it using the rules below |
-| unknown leaf, `word` or `word(…)` | treats it as `str` |
-| unknown annotation | passes it through |
-| more extensions than its family numbers | skips the rest |
-| schema it cannot parse | still navigates the type; its values are unavailable |
-
-## 10. Writer rules
-
-- Write the magic line first.
-- Write each type's schema once, before its first event.
-- Keep timestamps non-decreasing within each family.
-- Write a child's schema after its parent's, and number each event in its families (§6).
-- Don't append to a file holding a schema whose version is newer than the writer's.
-- Validate `num` and `enum` values. Never inspect `str` values.
-- Reject a map with a repeated key.
-- Append each object with a single write.
-
-## 11. Recovery
-
-A crash can leave an incomplete object at the end of a file. A reader uses the last line that is a valid footer: it parses, its type is known, its VLQ count matches the schema, and its walk ends at its footer start. Bytes after it are ignored, and a writer reopening the file truncates them.
-
-## 12. Tables and viewers
-
-| View | Source |
-|---|---|
-| Table list | all schemas, with type descriptions |
-| Columns | leaves in schema order, named by path |
-| Column tooltips | field descriptions |
-| Row count | latest `n` |
-| Scroll to row `m` | step and jump, O(log n) |
-| Family tables | the family's rows in file order; columns are the family type's leaves, with each child's own leaves added |
-| Family row `m` | seek each type in the family, O(k log n) |
-| Visible rows | footer plus one contiguous read per row |
-| Block cells | collapsed, expanded on demand by slicing the file |
-| Lists and maps | expandable cells |
-| Sorting and formatting | by leaf type and known annotations |
-| Time scrubbing | seek by timestamp, O(log n) per type |
-
-## 13. Example
-
-```
-trak 1.1
-// One CI build run.
-{
-  user: str,                  // who triggered the build
-  status: enum(ok, failed),
-  duration: num @ms,          // wall-clock time
-  tags: [] str,
-  stdout: |str @log,          // compiler output
-  error: str?,                // set when the build failed
-}
-##[ build 1 1.0 ]##kXAA
-// A release pushed to an environment.
-{
-  target: str,
-  version: str @semver,
-}
-##[ deploy 2 1.0 ]##dEBA
-user: ana
-status: ok
-duration: 910
-tags.0: ci
-Compiling core...
-Done.
---[ stdout ]--
-==[ build 1 20261107T140210.120Z ]==dHeEeEBAADCDBCXA
-user: joel
-status: failed
-duration: 1520
-tags.0: ci
-tags.1: nightly
-Compiling core...
-ld: undefined symbol main
---[ stdout ]--
-error: link failed
-==[ build 2 20261107T140322.415Z ]==fQBBfJCAEGECCHbRBL
-```
-
-Last footer, `fQBBfJCAEGECCHbRBL`:
-
-| VLQ | Value | Meaning |
-|---|---|---|
-| `fQ` | 146 | body length |
-| `B` `B` | 1, 1 | step, jump |
-| `fJ` | 139 | dir pointer, to the `deploy` schema |
-| `C` | 2 | dir type `deploy`, which has no events yet |
-| `A` | 0 | no extensions |
-| `E` `G` `E` | 4, 6, 4 | `user`, `status`, `duration` |
-| `C` `C` `H` | 2, 2, 7 | `tags` count, `tags.0`, `tags.1` |
-| `bR` | 43 | `stdout` |
-| `B` `L` | 1, 11 | `error` present, `error` |
-
-As a table:
-
-| n | user | status | duration | tags | stdout | error |
-|---|---|---|---|---|---|---|
-| 1 | ana | ok | 910 | ci | ▸ 2 lines | |
-| 2 | joel | failed | 1520 | ci, nightly | ▸ 2 lines | link failed |
+| A major other than 1 in the magic line | Refuses the file |
+| A minor below 2 | Refuses the file; 1.0 and 1.1 were a different format |
+| A newer minor | Reads it with these rules |
+| E greater than it knows | Skips the extra VLQs |
+| A node layout from any valid policy | Reads it; layouts are policy, not format |

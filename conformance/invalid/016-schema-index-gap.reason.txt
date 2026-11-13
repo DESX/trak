@@ -1,2 +1,0 @@
-second schema has index 3
-offset: 36

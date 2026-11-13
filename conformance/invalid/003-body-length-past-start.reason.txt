@@ -1,2 +1,0 @@
-schema body length 4 reaches past the magic line
-offset: 27

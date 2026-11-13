@@ -1,2 +1,0 @@
-b 2's step pointer lands on an event of type a
-offset: 136
