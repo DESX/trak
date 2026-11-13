@@ -121,7 +121,10 @@ func parseFooterLine(data []byte, end int64, s *Schema, schemaEnd int64) (*foote
 	if len(data) < 2 || data[len(data)-1] != '\n' || !bytes.HasPrefix(data, []byte("==[ ")) {
 		return nil, formatErr(start, "not a footer")
 	}
-	close := bytes.Index(data, []byte(" ]=="))
+	close := bytes.Index(data[4:], []byte(" ]=="))
+	if close >= 0 {
+		close += 4
+	}
 	if close < 0 {
 		return nil, formatErr(start, "footer has no ]==")
 	}

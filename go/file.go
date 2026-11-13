@@ -218,6 +218,10 @@ func (f *File) validFooter(end int64) (*footer, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Every append takes at least a 30-byte footer line.
+	if ft.version > uint64(ft.end-f.schemaEnd)/30+1 {
+		return nil, formatErr(ft.start, "version %d can't fit before byte %d", ft.version, ft.end)
+	}
 	if err := f.walkBody(ft, nil); err != nil {
 		return nil, err
 	}
