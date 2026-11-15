@@ -20,6 +20,27 @@ import (
 //go:embed sophie.schema
 var Schema string
 
+// FileSchema is Schema with a description of the file Generate writes for cfg.
+func FileSchema(cfg Config) string {
+	how := map[trak.Policy]string{
+		trak.Reference: "Reference policy: every footer node is written in full. The baseline that other writers are checked against.",
+		trak.Delta:     "Delta policy: most footer nodes are written as changes to an earlier full node, so footers are about half the size. Same content as the reference file of the same seed and size.",
+	}[cfg.Policy]
+	return fmt.Sprintf("# A synthetic Sophie log: sophie-gen --size %s --seed %d --policy %s.\n# %s\n\n%s", sizeName(cfg.Size), cfg.Seed, cfg.Policy, how, Schema)
+}
+
+func sizeName(n int64) string {
+	for _, u := range []struct {
+		n    int64
+		name string
+	}{{1e9, "GB"}, {1e6, "MB"}, {1e3, "KB"}} {
+		if n >= u.n && n%u.n == 0 {
+			return fmt.Sprintf("%d%s", n/u.n, u.name)
+		}
+	}
+	return fmt.Sprint(n)
+}
+
 // Config sets what Generate writes.
 type Config struct {
 	Size     int64 // the target size with the reference policy
@@ -118,7 +139,7 @@ func Generate(name string, cfg Config) (Stats, error) {
 	g.scale = float64(cfg.Size) / fullSize
 	g.now = time.Date(2026, 3, 2, 8, 0, 0, 0, time.UTC).UnixMilli()
 	os.Remove(name)
-	w, err := trak.Create(name, Schema, map[string]any{"version": "sophie 0.9.3"}, time.UnixMilli(g.now), &trak.Options{Policy: cfg.Policy})
+	w, err := trak.Create(name, FileSchema(cfg), map[string]any{"version": "sophie 0.9.3"}, time.UnixMilli(g.now), &trak.Options{Policy: cfg.Policy})
 	if err != nil {
 		return g.st, err
 	}

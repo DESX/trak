@@ -94,6 +94,12 @@ func TestServeListing(t *testing.T) {
 	if len(l.Files) != 1 || l.Files[0].Name != "a.trak" || l.Files[0].Size != int64(len(data)) {
 		t.Errorf("files = %+v (hidden files, other files and escaping links are left out)", l.Files)
 	}
+	if real, _ := filepath.EvalSymlinks(dir); l.Root != real || l.Dir != real {
+		t.Errorf("root = %q, dir = %q, want %q", l.Root, l.Dir, real)
+	}
+	if len(l.Files) == 1 && (l.Files[0].Desc == "" || l.Files[0].Error != "") {
+		t.Errorf("a.trak: desc %q, error %q", l.Files[0].Desc, l.Files[0].Error)
+	}
 	for _, bad := range []string{"..", "../..", "/etc", "sub/../..", ".git", "sub/./deeper", "nope"} {
 		if res := fetch(t, s, "GET", "/viewer/api/files?dir="+bad, nil); res.StatusCode != http.StatusNotFound {
 			t.Errorf("dir=%q: status %d", bad, res.StatusCode)

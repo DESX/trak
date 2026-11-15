@@ -116,11 +116,22 @@ The handover suggested a "generations" policy too. It was left out to keep the w
 
 ### V1. Joel's layout
 
-- A pane of open files on the left. "+" browses the directory `trak serve` serves; a local file can be read too.
+- A pane of open files on the left, each with its absolute path. "+" opens a file on the server, in a picker that shows absolute paths and each file's description, or one from this computer, through the browser's own picker. Browsers don't reveal a local file's path. The server picker stays inside the directory `trak serve` serves.
 - Tabs on the right. The first tab is the root as a tree.
 - Right-clicking an event list opens it in a table view or a tree view.
 - The tree view and the table view share one scrollbar, which maps to the whole range.
 - Nested objects start collapsed. Expanding one in a table adds a header row that spans its leaves.
+- Descriptions from the schema show beside fields in tree views, and when the pointer rests on a table header.
+
+### V5. Column widths fit their content
+
+A column fits the widest of its header, its enum words and its values in the first rows shown, up to 360 px. If the columns then leave the view part empty, the spare width goes to the columns that hit the cap, up to what they wanted. Short columns stay short, and long text gets the room.
+
+A column the user resizes keeps that width; "Fit to content", or a double-click on its edge, gives it back. Widths are CSS variables on the table, so a resize drag changes one variable a frame and redraws nothing.
+
+### V6. The viewer has its own version
+
+The status bar shows `UI x.y.z` from viewer/version.js. It changes with the viewer alone, so a viewer fix doesn't need a format or library release. UI 1.0.0 shipped with the first trak 1.2 build.
 
 ### V2. What a tree view's position means
 

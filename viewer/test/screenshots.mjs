@@ -22,6 +22,7 @@ await p.goto(base);
 await p.evaluate(() => localStorage.clear());
 await p.goto(base);
 await p.click("#add");
+    await p.click(".menu >> text=On the server…");
 await p.waitForSelector(`.picker-list .file >> text=${file}`);
 await shot("1a-picker");
 await p.click(`.picker-list .file >> text=${file}`);
@@ -53,6 +54,7 @@ await p.waitForTimeout(200);
 await shot("3a-columns-reordered");
 await p.click(`${view} .h.group >> text=context`);
 await p.$eval(`${view} .grid-wrap`, (el) => (el.scrollLeft = el.scrollWidth));
+await p.mouse.move(700, 790); // out from under the tooltip
 await shot("3b-group-expanded");
 
 await p.click(`${view} .row.hit .c.expand >> nth=0`);

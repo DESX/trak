@@ -43,6 +43,9 @@ Times are from the action to the drawn view, measured in the page. A cold run ev
 | reference | warm | 33 ms | 24 / 46 / 49 ms | 14 / 29 / 29 ms | 1 / 4 / 16 ms | 77 MB |
 | delta | cold | 61 ms | 36 / 48 / 59 ms | 17 / 36 / 36 ms | 1 / 5 / 12 ms | 54 MB |
 | delta | warm | 38 ms | 29 / 42 / 48 ms | 15 / 26 / 27 ms | 1 / 5 / 24 ms | 55 MB |
+| delta | warm, UI 1.1.0 | 45 ms | 29 / 42 / 60 ms | 15 / 24 / 25 ms | 1 / 8 / 25 ms | 55 MB |
+
+The first four rows are UI 1.0.0. The last is UI 1.1.0, which draws the table as CSS grid rows with fitted columns, on the regenerated files that carry a description.
 
 Targets: open under 200 ms, jump under 100 ms, a page of rows under 50 ms with no blank frames, a scrubber step under 50 ms, and memory independent of file size. All four runs meet every target. No page was ever drawn partly empty: rows are drawn only once every row of the page is read.
 

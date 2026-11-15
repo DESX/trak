@@ -127,9 +127,13 @@ describe("viewer", () => {
     const p = await page();
     await p.goto(base);
     await p.click("#add");
+    await p.click(".menu >> text=On the server…");
     await p.waitForSelector(".picker-list .file");
-    const names = await p.$$eval(".picker-list .file > span:first-child", (els) => els.map((e) => e.textContent));
+    const names = await p.$$eval(".picker-list .file .pick-name > span:first-child", (els) => els.map((e) => e.textContent));
     assert.deepEqual(names, files());
+    // Each file shows its schema's description, and the picker its absolute path.
+    assert.equal(await p.$$eval(".picker-list .file .pick-desc:not(.error)", (els) => els.length), names.length);
+    assert.ok((await p.textContent(".picker-where")).startsWith("/"));
     assert.deepEqual(p.errors, []);
     await p.close();
   });
@@ -144,6 +148,7 @@ describe("viewer", () => {
 
       // Open the file and show the schema: from the click to the root tree.
       await p.click("#add");
+    await p.click(".menu >> text=On the server…");
       await p.waitForSelector(`.picker-list .file >> text=${name}`);
       const open = await timed(p, "tree", `[...document.querySelectorAll(".picker-list .file")].find((b) => b.textContent.startsWith(${JSON.stringify(name)})).click()`);
       r.open = +open.ms.toFixed(1);

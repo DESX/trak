@@ -11,6 +11,7 @@
       <header>
         <span class="brand">trak</span>
         <button id="add" title="Open a file" aria-label="Open a file">+</button>
+        <input type="file" id="pick-local" accept=".trak" hidden />
       </header>
       <ul id="file-list"></ul>
     </aside>
@@ -23,6 +24,7 @@
         <button id="schema" title="Show the file's schema">Schema</button>
         <button id="follow" title="Check for new appends every 2 seconds">Follow</button>
         <button id="debug-toggle" title="Every byte range the viewer has read">0 requests</button>
+        <span id="ui-version" title="The viewer's version"></span>
       </footer>
     </main>
     <section id="debug" hidden>
@@ -43,14 +45,11 @@
     </section>
     <dialog id="picker">
       <header>
-        <span>Open a trak file</span>
+        <span>Open a file on the server</span>
         <button id="picker-close" title="Close">×</button>
       </header>
       <div class="picker-where dim"></div>
       <ul class="picker-list"></ul>
-      <footer>
-        <label class="local">Or read a file from this computer <input type="file" id="pick-local" accept=".trak" /></label>
-      </footer>
     </dialog>
     <script type="module" src="app.js"></script>
   </body>

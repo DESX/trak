@@ -9,7 +9,7 @@
 // changed since the previous position are highlighted.
 
 import { Scroller } from "./scroll.js";
-import { contextMenu, firstLine, fmtInt, fmtStamp, h, rendered, showText } from "./util.js";
+import { contextMenu, descOf, firstLine, fmtInt, fmtStamp, h, rendered, showText } from "./util.js";
 
 const PAGE = 10; // list items shown per page in the tree
 
@@ -52,10 +52,11 @@ export class TreeView {
       // The owner may be nested inside an item: open every level down to the list.
       this.open.add(this.listRel);
     }
-    this.scroller = new Scroller({ label: "versions", onChange: (p) => this.go(p, false) });
-    this.input = h("input.version-input", { type: "text", inputMode: "numeric", "aria-label": this.mode === "tree" ? "Version" : "Item" });
     // The root's versions are the file's: its version k is file version k + 1.
     this.ofs = this.mode === "tree" && this.path === "" ? 1 : 0;
+    const unit = this.mode === "tree" ? "version" : "item";
+    this.scroller = new Scroller({ label: unit, onChange: (p) => this.go(p, false), name: (p) => `${unit} ${fmtInt(p + this.ofs)}` });
+    this.input = h("input.version-input", { type: "text", inputMode: "numeric", "aria-label": this.mode === "tree" ? "Version" : "Item" });
     const go = () => {
       const n = parseInt(this.input.value.replace(/[, _]/g, ""), 10);
       if (Number.isFinite(n)) this.jump(n < 0 ? this.count + n : n - this.ofs);
@@ -140,7 +141,8 @@ export class TreeView {
       if (!first && l.id !== undefined && !this.ids.has(l.rel) && l.depth > 0) l.el.classList.add("added");
     }
     this.ids = ids;
-    this.body.replaceChildren(...lines.map((l) => l.el));
+    const about = this.mode === "tree" && this.path === "" ? this.file.schema.desc || this.file.schema.root.desc : "";
+    this.body.replaceChildren(...(about ? [h("div.file-desc", {}, about)] : []), ...lines.map((l) => l.el));
     this.input.value = String(p + this.ofs);
     this.label.textContent = this.mode === "tree" ? `version ${fmtInt(p + this.ofs)} of ${fmtInt(this.count - 1 + this.ofs)}` : `item ${fmtInt(p)} of ${fmtInt(this.count)}`;
     this.when.replaceChildren(
@@ -268,7 +270,8 @@ export class TreeView {
   }
 
   line(depth, rel, id, content, field, { toggle, menu } = {}) {
-    const el = h("div.line", { style: { paddingLeft: `${12 + depth * 18}px` }, title: field?.desc || "" }, content);
+    const desc = descOf(field);
+    const el = h("div.line", { style: { paddingLeft: `${12 + depth * 18}px` } }, content, desc ? h("span.desc", {}, `# ${desc}`) : null);
     if (toggle) {
       el.classList.add("openable");
       el.addEventListener("click", (e) => {

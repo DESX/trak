@@ -55,6 +55,8 @@ export class Type {
 export class Schema {
   constructor(text) {
     this.text = text;
+    /** The file's description: a comment block at the start, then a blank line. */
+    this.desc = "";
     this.root = null;
     this.types = new Map();
     this.order = [];
@@ -146,6 +148,13 @@ export function parseSchema(text) {
   };
   const s = new Schema(text);
   const refs = [];
+  // Comment lines at the start describe the file if a blank line follows them.
+  let j = 0;
+  while (toks[j].kind === "c" && (j === 0 || toks[j].line === toks[j - 1].line + 1)) j++;
+  if (j > 0 && toks[j].line > toks[j - 1].line + 1) {
+    s.desc = toks.slice(0, j).map((t) => t.text).filter(Boolean).join(" ");
+    p = j;
+  }
 
   function typeExpr(f, inEvent) {
     const t = next();

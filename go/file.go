@@ -59,6 +59,15 @@ func NewFile(r io.ReaderAt, size int64) (*File, error) {
 	return f, nil
 }
 
+// ReadSchema reads only the schema header of a trak file of the given size.
+func ReadSchema(r io.ReaderAt, size int64) (*Schema, error) {
+	f := &File{r: r, cache: newFooterCache(1)}
+	if err := f.readHeader(size); err != nil {
+		return nil, err
+	}
+	return f.schema, nil
+}
+
 // Close closes the underlying file, if Open opened it.
 func (f *File) Close() error {
 	if f.closer != nil {

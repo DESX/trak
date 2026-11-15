@@ -17,6 +17,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	trak "github.com/desx/trak/go"
 )
 
 // The viewer (../../../viewer) and the JavaScript reader it imports (../../../js/src),
@@ -36,7 +38,6 @@ var uiFiles embed.FS
 //	/viewer/files/PATH    a .trak file, with HEAD and Range support
 type server struct {
 	root string // absolute, symlinks resolved
-	name string // shown as the listing's title
 	ui   http.Handler
 }
 
@@ -61,7 +62,7 @@ func newServerFS(root string, ui fs.FS) (*server, error) {
 	if st, err := os.Stat(real); err != nil || !st.IsDir() {
 		return nil, fmt.Errorf("%s is not a directory", root)
 	}
-	return &server{root: real, name: filepath.Base(real), ui: http.FileServer(http.FS(ui))}, nil
+	return &server{root: real, ui: http.FileServer(http.FS(ui))}, nil
 }
 
 func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -119,7 +120,8 @@ func (s *server) resolve(rel string) (string, error) {
 }
 
 type listing struct {
-	Root  string      `json:"root"`
+	Root  string      `json:"root"` // the served directory's absolute path
+	Dir   string      `json:"dir"`  // the listed directory's absolute path
 	Dirs  []string    `json:"dirs"`
 	Files []fileEntry `json:"files"`
 }
@@ -128,6 +130,8 @@ type fileEntry struct {
 	Name     string `json:"name"`
 	Size     int64  `json:"size"`
 	Modified string `json:"modified"`
+	Desc     string `json:"desc"`  // the schema's file description, or its root's
+	Error    string `json:"error"` // why the header can't be read
 }
 
 func (s *server) list(w http.ResponseWriter, r *http.Request) {
@@ -142,7 +146,7 @@ func (s *server) list(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	out := listing{Root: s.name, Dirs: []string{}, Files: []fileEntry{}}
+	out := listing{Root: s.root, Dir: dir, Dirs: []string{}, Files: []fileEntry{}}
 	for _, e := range entries {
 		name := e.Name()
 		if strings.HasPrefix(name, ".") {
@@ -160,7 +164,9 @@ func (s *server) list(w http.ResponseWriter, r *http.Request) {
 		case info.IsDir():
 			out.Dirs = append(out.Dirs, name)
 		case info.Mode().IsRegular() && strings.HasSuffix(name, ".trak"):
-			out.Files = append(out.Files, fileEntry{name, info.Size(), info.ModTime().UTC().Format(time.RFC3339)})
+			e := fileEntry{Name: name, Size: info.Size(), Modified: info.ModTime().UTC().Format(time.RFC3339)}
+			e.Desc, e.Error = describe(real, info.Size())
+			out.Files = append(out.Files, e)
 		}
 	}
 	sort.Strings(out.Dirs)
@@ -168,6 +174,23 @@ func (s *server) list(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
 	_ = json.NewEncoder(w).Encode(out)
+}
+
+// describe returns a file's description from its schema header.
+func describe(name string, size int64) (desc, problem string) {
+	fh, err := os.Open(name)
+	if err != nil {
+		return "", err.Error()
+	}
+	defer fh.Close()
+	sc, err := trak.ReadSchema(fh, size)
+	if err != nil {
+		return "", err.Error()
+	}
+	if sc.Desc != "" {
+		return sc.Desc, ""
+	}
+	return sc.Root.Desc, ""
 }
 
 func (s *server) file(w http.ResponseWriter, r *http.Request, rel string) {

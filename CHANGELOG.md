@@ -27,7 +27,9 @@ doesn't read or write 1.0 or 1.1 files, and the libraries that did are gone.
   seed and a policy.
 - **trak serve** and a new viewer: a pane of open files, and tabs of tree, table
   and log views. Every view has a URL, and a debug panel lists every byte range
-  read.
+  read. The viewer has its own version, shown in the status bar: UI 1.1.0.
+- A file description: comment lines at the start of the schema, followed by a
+  blank line. `sophie-gen` writes its flags and policy there.
 - Conformance vectors, written by the Go tests and read by the Go and JS tests.
 - A browser test that times the viewer's responsiveness targets on each file, and
   bench/README.md with the policy comparison.

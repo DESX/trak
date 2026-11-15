@@ -105,3 +105,64 @@ export function rendered(view, start) {
   document.dispatchEvent(new CustomEvent("trak:rendered", { detail: { view, ms } }));
   return ms;
 }
+
+let measureCtx = null;
+
+/** The width in pixels of text in a CSS font, such as "12px monospace". */
+export function textWidth(text, font) {
+  measureCtx ??= document.createElement("canvas").getContext("2d");
+  measureCtx.font = font;
+  return measureCtx.measureText(text).width;
+}
+
+/** A font from the page's theme: font("--mono", 12) → "12px ui-monospace, …". */
+export function font(family, size, weight = 400) {
+  return `${weight} ${size}px ${getComputedStyle(document.documentElement).getPropertyValue(family).trim()}`;
+}
+
+/** How a field's type is written in the schema: num, |str, enum(a, b), event turn, … */
+export function typeName(f) {
+  if (!f) return "";
+  let t;
+  if (f.kind === "event") t = `event ${typeName(f.item)}`;
+  else if (f.kind === "object") t = f.type?.name || "{ … }";
+  else if (f.kind === "enum") t = `enum(${f.words.join(", ")})`;
+  else t = f.block ? "|str" : f.kind;
+  return f.optional ? `${t}?` : t;
+}
+
+/** A field's description, or its type's. */
+export const descOf = (f) => f?.desc || f?.type?.desc || f?.item?.type?.desc || "";
+
+let tipEl = null;
+let tipTimer = 0;
+let tipHidden = 0; // when a tooltip last closed: moving to the next one shows it at once
+
+/** Show a tooltip under el when the pointer rests on it. `content()` returns nodes or text. */
+export function tooltip(el, content) {
+  el.addEventListener("pointerenter", (e) => {
+    if (e.buttons) return;
+    clearTimeout(tipTimer);
+    tipTimer = setTimeout(() => showTip(el, content()), performance.now() - tipHidden < 400 ? 0 : 300);
+  });
+  el.addEventListener("pointerleave", hideTip);
+  el.addEventListener("pointerdown", hideTip);
+}
+
+function showTip(el, content) {
+  if (!el.isConnected || content == null || content === "") return;
+  tipEl?.remove();
+  tipEl = h("div.tip", { role: "tooltip" }, content);
+  document.body.append(tipEl);
+  const r = el.getBoundingClientRect();
+  const t = tipEl.getBoundingClientRect();
+  tipEl.style.left = `${Math.max(4, Math.min(r.left, innerWidth - t.width - 4))}px`;
+  tipEl.style.top = `${r.bottom + t.height + 6 > innerHeight ? r.top - t.height - 6 : r.bottom + 6}px`;
+}
+
+export function hideTip() {
+  clearTimeout(tipTimer);
+  if (tipEl) tipHidden = performance.now();
+  tipEl?.remove();
+  tipEl = null;
+}

@@ -34,6 +34,10 @@ test("schema errors carry positions, descriptions are kept", () => {
   assert.equal(s.root.desc, "The root.");
   assert.equal(s.root.field("a").desc, "an a");
   assert.equal(s.root.slots.length, 1);
+  assert.equal(s.desc, "");
+  const d = parseSchema("# A test file.\n# Two lines.\n\n# The root.\nroot r { a: str }\n");
+  assert.equal(d.desc, "A test file. Two lines.");
+  assert.equal(d.root.desc, "The root.");
   assert.throws(() => parseSchema("root r { a: strr }"), /unknown type strr/);
   assert.throws(() => parseSchema("root r { a: str, a: num }"), /defined twice \(line 1, column 18\)/);
   assert.throws(() => parseSchema("object o { x: o }\nroot r { o: o }"), /contains itself/);

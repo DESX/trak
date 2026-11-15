@@ -38,6 +38,7 @@ trak is an append-only, human-readable text file holding one versioned tree of s
 - Names match `[A-Za-z_][A-Za-z0-9_]*`. `num` values match `-?(0|[1-9][0-9]*)(\.[0-9]+)?([eE][+-]?[0-9]+)?`. Enum words are names.
 - Types may be defined in any order. No type may contain itself, directly or through event lists, so the tree's depth is fixed by the schema. An unknown type name is an error.
 - Descriptions are part of the schema, and APIs and viewers expose them.
+- Comment lines at the very start of the schema, followed by a blank line, describe the file rather than the first type. Readers show them when listing files, and fall back to the root's description.
 
 ```
 # A CI server.

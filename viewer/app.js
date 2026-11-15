@@ -6,13 +6,17 @@ import { BlobSource, ServeSource, TrakFile } from "../js/src/index.js";
 import { LogView } from "./log.js";
 import { TableView } from "./table.js";
 import { TreeView } from "./tree.js";
-import { contextMenu, fmtBytes, fmtInt, h, showText, store } from "./util.js";
+import { contextMenu, fmtBytes, fmtInt, h, showText, store, tooltip } from "./util.js";
+import { UI_VERSION } from "./version.js";
 
 const API = "api";
 
 class App {
   constructor() {
     this.files = (store("trak.files") ?? []).filter((p) => typeof p === "string");
+    this.descs = store("trak.descs") ?? {}; // file → its description, from listings and opened files
+    this.root = store("trak.root") ?? ""; // the served directory's absolute path
+    this.dir = ""; // the directory the server picker last showed
     this.open = new Map(); // key → { key, name, file, tabs, active, local }
     this.current = null;
     this.requests = [];
@@ -24,7 +28,14 @@ class App {
     this.views = document.getElementById("views");
     this.status = document.getElementById("status");
     this.debug = document.getElementById("debug");
-    document.getElementById("add").addEventListener("click", () => this.pick(""));
+    document.getElementById("add").addEventListener("click", (e) => {
+      const r = e.currentTarget.getBoundingClientRect();
+      contextMenu({ clientX: r.left, clientY: r.bottom + 4, preventDefault() {}, stopPropagation() {} }, [
+        ["On the server…", () => this.pick(this.dir)],
+        ["On this computer…", () => document.getElementById("pick-local").click()],
+      ]);
+    });
+    document.getElementById("ui-version").textContent = `UI ${UI_VERSION}`;
     document.getElementById("debug-toggle").addEventListener("click", () => this.toggleDebug());
     document.getElementById("debug-clear").addEventListener("click", () => ((this.requests = []), this.drawDebug()));
     document.getElementById("follow").addEventListener("click", () => this.toggleFollow());
@@ -32,22 +43,41 @@ class App {
     addEventListener("hashchange", () => this.route());
     this.drawFiles();
     this.route();
+    this.list("").catch(() => {}); // learn the served directory's path
+  }
+
+  /** The absolute path of a served file, or of a directory under the served one. */
+  full(rel) {
+    return rel ? `${this.root}/${rel}` : this.root;
+  }
+
+  async list(dir) {
+    const res = await fetch(`${API}/files?dir=${encodeURIComponent(dir)}`, { cache: "no-store" });
+    if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+    const l = await res.json();
+    if (l.root !== this.root) {
+      this.root = store("trak.root", l.root);
+      this.drawFiles();
+    }
+    for (const f of l.files) this.descs[dir ? `${dir}/${f.name}` : f.name] = f.desc;
+    store("trak.descs", this.descs);
+    return l;
   }
 
   // Files.
 
   drawFiles() {
-    const items = this.files.map((p) =>
-      h(
-        "li",
-        { class: this.current?.key === p ? "active" : "" },
-        h("button.file", { onclick: () => this.select(p), title: p }, h("span.name", {}, p.split("/").pop()), h("span.dir", {}, p.includes("/") ? p.slice(0, p.lastIndexOf("/")) : "")),
-        h("button.close", { title: "Remove from the list", onclick: () => this.remove(p) }, "×"),
-      ),
-    );
+    const entry = (active, name, dir, desc, onclick, close) => {
+      const btn = h("button.file", { onclick }, h("span.name", {}, name), h("span.dir", {}, dir));
+      tooltip(btn, () => [h("div.tip-head", {}, dir ? `${dir}/${name}` : name), desc ? h("div", {}, desc) : null]);
+      return h("li", { class: active ? "active" : "" }, btn, close ? h("button.close", { title: "Remove from the list", onclick: close }, "×") : null);
+    };
+    const items = this.files.map((p) => {
+      const slash = p.lastIndexOf("/");
+      return entry(this.current?.key === p, p.slice(slash + 1), this.full(slash < 0 ? "" : p.slice(0, slash)), this.descs[p], () => this.select(p), () => this.remove(p));
+    });
     for (const o of this.open.values()) {
-      if (o.local)
-        items.push(h("li", { class: this.current === o ? "active" : "" }, h("button.file", { onclick: () => this.activate(o) }, h("span.name", {}, o.name), h("span.dir", {}, "local file"))));
+      if (o.local) items.push(entry(this.current === o, o.name, "on this computer", o.file.schema.desc || o.file.schema.root.desc, () => this.activate(o)));
     }
     if (!items.length) items.push(h("li.empty", {}, "No files yet. Press + to open one."));
     this.fileList.replaceChildren(...items);
@@ -69,25 +99,40 @@ class App {
     this.drawFiles();
   }
 
-  /** The file picker: folders and .trak files under the served directory. */
+  /** The server's file picker: folders and .trak files under the served directory. */
   async pick(dir) {
-    let dlg = document.getElementById("picker");
+    const dlg = document.getElementById("picker");
     const list = dlg.querySelector(".picker-list");
     const where = dlg.querySelector(".picker-where");
     if (!dlg.open) dlg.showModal();
     list.replaceChildren(h("li.empty", {}, "Loading…"));
     try {
-      const res = await fetch(`${API}/files?dir=${encodeURIComponent(dir)}`, { cache: "no-store" });
-      if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
-      const l = await res.json();
-      where.textContent = `${l.root}/${dir}`;
+      const l = await this.list(dir);
+      this.dir = dir;
+      // The path, each folder from the served one down a link.
+      const segs = dir ? dir.split("/") : [];
+      const up = l.root.slice(0, l.root.lastIndexOf("/") + 1);
+      where.replaceChildren(
+        h("span.dim", {}, up),
+        h("a", { href: "#", onclick: (e) => (e.preventDefault(), this.pick("")) }, l.root.slice(up.length)),
+        ...segs.flatMap((sg, i) => ["/", h("a", { href: "#", onclick: (e) => (e.preventDefault(), this.pick(segs.slice(0, i + 1).join("/"))) }, sg)]),
+      );
       const join = (n) => (dir ? `${dir}/${n}` : n);
       const items = [];
-      if (dir) items.push(h("li", {}, h("button.dir", { onclick: () => this.pick(dir.includes("/") ? dir.slice(0, dir.lastIndexOf("/")) : "") }, "↑ ..")));
+      if (dir) items.push(h("li", {}, h("button.dir", { onclick: () => this.pick(segs.slice(0, -1).join("/")) }, "↑ ..")));
       for (const d of l.dirs) items.push(h("li", {}, h("button.dir", { onclick: () => this.pick(join(d)) }, `▸ ${d}/`)));
       for (const f of l.files)
         items.push(
-          h("li", {}, h("button.file", { onclick: () => (dlg.close(), this.add(join(f.name))) }, h("span", {}, f.name), h("span.dim", {}, `${fmtBytes(f.size)} · ${f.modified.replace("T", " ").replace("Z", "")}`))),
+          h(
+            "li",
+            {},
+            h(
+              "button.file",
+              { onclick: () => (dlg.close(), this.add(join(f.name))), title: `${l.dir}/${f.name}` },
+              h("span.pick-name", {}, h("span", {}, f.name), h("span.dim", {}, `${fmtBytes(f.size)} · ${f.modified.replace("T", " ").replace("Z", "")}`)),
+              f.error ? h("span.pick-desc.error", {}, f.error) : f.desc ? h("span.pick-desc", {}, f.desc) : null,
+            ),
+          ),
         );
       if (!l.dirs.length && !l.files.length) items.push(h("li.empty", {}, "No .trak files here."));
       list.replaceChildren(...items);
@@ -123,6 +168,10 @@ class App {
     this.setStatus(`Opening ${name}…`);
     const file = await TrakFile.open(await source(), { log: (r) => this.logRequest(r) });
     const o = { key, name, file, tabs: [], active: null, openMs: performance.now() - t0 };
+    if (!key.startsWith("local:")) {
+      this.descs[key] = file.schema.desc || file.schema.root.desc;
+      store("trak.descs", this.descs);
+    }
     this.open.set(key, o);
     return o;
   }
@@ -397,9 +446,6 @@ window.trakApp = app;
 document.getElementById("picker-close").addEventListener("click", () => document.getElementById("picker").close());
 document.getElementById("pick-local").addEventListener("change", (e) => {
   const f = e.target.files?.[0];
-  if (f) {
-    document.getElementById("picker").close();
-    app.openLocal(f);
-  }
+  if (f) app.openLocal(f);
   e.target.value = "";
 });

@@ -75,6 +75,7 @@ func (t *Type) HasEvents() bool { return t.events }
 // Schema is a parsed schema (SPEC §2).
 type Schema struct {
 	Text  string
+	Desc  string // the file's description: a comment block at the start, then a blank line
 	Root  *Type
 	Types map[string]*Type // named object types, the root included
 	Order []*Type          // named types in definition order
@@ -193,6 +194,26 @@ func (p *schemaParser) comments() string {
 	return strings.Join(parts, " ")
 }
 
+// fileDesc takes the comment lines at the start of the schema if a blank line follows
+// them. Without the blank line they describe the first type.
+func (p *schemaParser) fileDesc() string {
+	j := 0
+	for p.toks[j].kind == 'c' && (j == 0 || p.toks[j].line == p.toks[j-1].line+1) {
+		j++
+	}
+	if j == 0 || p.toks[j].line <= p.toks[j-1].line+1 {
+		return ""
+	}
+	var parts []string
+	for _, t := range p.toks[:j] {
+		if t.text != "" {
+			parts = append(parts, t.text)
+		}
+	}
+	p.i = j
+	return strings.Join(parts, " ")
+}
+
 // trailing returns a comment on the same line as the previous token.
 func (p *schemaParser) trailing() string {
 	if t := p.peek(); t.kind == 'c' && !t.lineStart {
@@ -230,6 +251,7 @@ func (p *schemaParser) parse() (*Schema, error) {
 	}
 	s := &Schema{Types: map[string]*Type{}}
 	var refs []pending
+	s.Desc = p.fileDesc()
 	for {
 		desc := p.comments()
 		t := p.next()

@@ -294,3 +294,20 @@ func TestVersionAtTime(t *testing.T) {
 		t.Errorf("before the start: %d", v)
 	}
 }
+
+func TestSchemaDescriptions(t *testing.T) {
+	s, err := ParseSchema("# A test file.\n# Two lines.\n\n# The root.\nroot r {\n  a: str, # an a\n}\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Desc != "A test file. Two lines." || s.Root.Desc != "The root." || s.Root.Field("a").Desc != "an a" {
+		t.Fatalf("got %q, %q, %q", s.Desc, s.Root.Desc, s.Root.Field("a").Desc)
+	}
+	s, err = ParseSchema("# The root.\nroot r { a: str }\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Desc != "" || s.Root.Desc != "The root." {
+		t.Fatalf("no blank line: got %q, %q", s.Desc, s.Root.Desc)
+	}
+}

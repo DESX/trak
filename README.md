@@ -98,11 +98,11 @@ trak serve ~/logs
 
 Then open the address it prints.
 
-- **Files.** A pane on the left lists the files you have opened; **+** browses the served directory.
+- **Files.** A pane on the left lists the files you have opened, with their full paths; **+** opens one from the server or from your computer. The server's picker shows each file's description.
 - **Tabs.** The first tab is the root, as a tree. Right-click any event list to open it as a **table**: one row per item, one column per leaf, nested objects as collapsible spanning headers. Or open it as a **tree** whose scrollbar steps through versions.
 - **Log.** The file as text, from any version.
 
-Every view has a URL. The viewer knows nothing about any schema: everything comes from the file.
+Every view has a URL. The viewer knows nothing about any schema: everything comes from the file, descriptions included. Its own version is in the status bar.
 
 The debug panel, the request counter at the bottom right, lists every byte range read.
 

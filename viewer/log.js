@@ -28,7 +28,7 @@ export class LogView {
   }
 
   async init() {
-    this.scroller = new Scroller({ label: "versions", onChange: (p) => this.go(p + 1, false) });
+    this.scroller = new Scroller({ label: "version", onChange: (p) => this.go(p + 1, false), name: (p) => `version ${fmtInt(p + 1)}` });
     this.input = h("input.version-input", { type: "text", inputMode: "numeric", "aria-label": "Version" });
     const go = () => {
       const n = parseInt(this.input.value.replace(/[, _]/g, ""), 10);

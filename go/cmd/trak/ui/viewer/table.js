@@ -4,10 +4,12 @@
 // scrollbar maps to the whole list.
 
 import { Scroller } from "./scroll.js";
-import { contextMenu, firstLine, fmtInt, fmtStamp, h, pattern, rendered, showText, store } from "./util.js";
+import { contextMenu, descOf, firstLine, fmtInt, fmtStamp, font, h, hideTip, pattern, rendered, showText, store, textWidth, tooltip, typeName } from "./util.js";
 
 const ROW = 26;
 const CELL_BYTES = 300;
+const MIN_WIDTH = 44;
+const MAX_WIDTH = 360; // a fitted column's widest, before spare width is shared out
 
 export class TableView {
   constructor(app, file, path) {
@@ -37,7 +39,8 @@ export class TableView {
     this.item = this.list.field.item;
     this.layoutKey = `trak.layout.${this.file.schema.root.name}.${pattern(this.path)}`;
     this.layout = { expanded: [], hidden: [], order: {}, widths: {}, ...(store(this.layoutKey) ?? {}) };
-    this.scroller = new Scroller({ label: "rows", onChange: (p) => this.go(p, false) });
+    this.scroller = new Scroller({ label: "row", onChange: (p) => this.go(p, false), name: (p) => `row ${fmtInt(p)}` });
+    this.wants = new Map(); // column key → the width its content wants
     this.count = h("span.count");
     this.rowInput = h("input.row-input", { type: "text", inputMode: "numeric", placeholder: "row", "aria-label": "Go to row" });
     const go = () => {
@@ -59,7 +62,9 @@ export class TableView {
     this.body = h("div.tbody");
     this.grid = h("div.grid", {}, this.head, this.body);
     this.wrap = h("div.grid-wrap", {}, this.grid);
-    this.el.append(this.toolbar, h("div.table-main", {}, this.wrap, this.scroller.el));
+    this.hbar = new Scroller({ axis: "x", label: "columns", onChange: (x) => (this.wrap.scrollLeft = x) });
+    this.wrap.addEventListener("scroll", () => this.hbar.set(this.wrap.scrollLeft, true));
+    this.el.append(this.toolbar, h("div.table-main", {}, this.wrap, this.scroller.el, this.hbar.el));
     this.scroller.attach(this.wrap);
     this.scroller.attach(this.el);
     this.buildColumns();
@@ -91,7 +96,11 @@ export class TableView {
   }
 
   resized() {
-    const page = Math.max(1, Math.floor((this.wrap.clientHeight - this.head.offsetHeight - 14) / ROW));
+    if (this.wrap.clientWidth !== this.wrapWidth) {
+      this.wrapWidth = this.wrap.clientWidth;
+      if (this.leaves) this.drawHead();
+    }
+    const page = Math.max(1, Math.floor((this.wrap.clientHeight - this.head.offsetHeight - 2) / ROW));
     if (page === this.page) return;
     this.page = page;
     this.scroller.setRange(this.list.count, page);
@@ -164,8 +173,61 @@ export class TableView {
     return { leaves, tree, depth };
   }
 
+  // Widths. A column the user resized keeps its width. The others fit the rows first
+  // shown, header included, up to a cap; spare width then goes to columns that were
+  // capped, so the table fills the view without padding short columns.
+
   width(c) {
-    return this.layout.widths[c.key] ?? (c.kind === "meta" ? (c.key === "#" ? 80 : 190) : c.kind === "list" ? 90 : c.kind === "group" ? 220 : c.field?.block ? 320 : c.field?.kind === "num" ? 100 : 150);
+    return this.layout.widths[c.key] ?? this.fit?.get(c.key) ?? fallbackWidth(c);
+  }
+
+  /** The width a column's content wants, measured on the rows drawn. */
+  wanted(c) {
+    const mono = font("--mono", 12);
+    const small = font("--mono", 11);
+    const head = textWidth(c.kind === "group" ? `▸ ${c.name} (${countLeaves(c)})` : c.name, font("--sans", 13, 500));
+    let w = head;
+    const rows = this.current ?? [];
+    if (c.key === "#") w = Math.max(w, textWidth(fmtInt(Math.max(0, this.list.count - 1)), mono));
+    else if (c.key === "@time") w = textWidth("2026-01-01 00:00:00.000", mono);
+    else if (c.field?.kind === "enum") w = Math.max(w, ...c.field.words.map((x) => textWidth(x, mono) + 10));
+    for (const r of rows) {
+      let t = 0;
+      if (c.kind === "list") t = textWidth(`${fmtInt(r.cells.get(c.key)?.list?.count ?? 0)} ▸`, mono);
+      else if (c.kind === "group") t = textWidth(groupSummary(r, c), mono);
+      else if (c.kind === "leaf") {
+        const v = r.cells.get(c.key);
+        if (v?.text == null) continue;
+        const [line, cut] = firstLine(v.text);
+        t = textWidth(line, mono) + (c.field.kind === "enum" ? 10 : 0);
+        if (cut || v.leaf.len > CELL_BYTES) t += textWidth(` ▸ ${fmtBytesShort(v.leaf.len)}`, small) + 4;
+      }
+      if (t > w) w = t;
+    }
+    return Math.ceil(w) + 18; // padding and border
+  }
+
+  /** Fit every visible column without a user width, then share out the spare width. */
+  fitColumns() {
+    const fit = new Map();
+    const want = new Map();
+    for (const c of this.leaves) {
+      if (this.layout.widths[c.key] != null) continue;
+      let w = this.wants.get(c.key);
+      if (w == null) {
+        w = this.wanted(c);
+        if (this.current) this.wants.set(c.key, w);
+      }
+      want.set(c.key, w);
+      fit.set(c.key, Math.max(MIN_WIDTH, Math.min(w, MAX_WIDTH)));
+    }
+    const spare = this.wrap.clientWidth - this.leaves.reduce((s, c) => s + (this.layout.widths[c.key] ?? fit.get(c.key)), 0);
+    const capped = [...want].filter(([k, w]) => w > fit.get(k));
+    const short = capped.reduce((s, [k, w]) => s + w - fit.get(k), 0);
+    if (spare > 0 && short > 0) {
+      for (const [k, w] of capped) fit.set(k, fit.get(k) + Math.floor(Math.min(w - fit.get(k), (spare * (w - fit.get(k))) / short)));
+    }
+    this.fit = fit;
   }
 
   save() {
@@ -175,65 +237,48 @@ export class TableView {
   drawHead() {
     const { leaves, tree, depth } = this.visible();
     this.leaves = leaves;
+    this.fitColumns();
+    this.headCells = [];
     this.head.replaceChildren();
+    leaves.forEach((c, i) => this.grid.style.setProperty(`--c${i}`, `${this.width(c)}px`));
+    this.grid.style.setProperty("--cols", leaves.map((_, i) => `var(--c${i})`).join(" "));
     this.head.style.gridTemplateRows = `repeat(${depth}, 24px)`;
-    const total = leaves.reduce((s, c) => s + this.width(c), 0);
-    this.grid.style.width = `${total}px`;
     let x = 0;
     const place = (nodes, row) => {
       for (const n of nodes) {
-        const w = (n.kids ? leafCols(n) : [n.col]).reduce((s, c) => s + this.width(c), 0);
-        const el = this.headCell(n, row, depth, x, w);
-        this.head.append(el);
+        const span = n.kids ? leafCols(n).length : 1;
+        this.head.append(this.headCell(n, row, depth, x, span));
         if (n.kids) {
           const keep = x;
           place(n.kids, row + 1);
-          x = keep + w;
-        } else x += w;
+          x = keep + span;
+        } else x += span;
       }
     };
     place(tree, 0);
-    this.head.style.height = `${depth * 24}px`;
+    this.syncScroll();
   }
 
-  headCell(n, row, depth, x, w) {
+  headCell(n, row, depth, x, span) {
     const c = n.col;
     const group = c.kind === "group";
     const rows = n.kids ? 1 : depth - row;
     const label = group ? (n.kids ? `▾ ${c.name}` : `▸ ${c.name} (${countLeaves(c)})`) : c.name;
     const el = h(
-      `div.h${group ? ".group" : ""}${group && !n.kids ? ".collapsed" : ""}${c.kind === "list" ? ".list" : ""}`,
+      `div.h${group ? ".group" : ""}${group && !n.kids ? ".collapsed" : ""}${c.kind === "list" ? ".list" : ""}${c.kind === "meta" ? ".meta" : ""}`,
       {
-        style: { left: `${x}px`, top: `${row * 24}px`, width: `${w}px`, height: `${rows * 24}px` },
-        title: c.field?.desc || c.key,
-        draggable: c.kind !== "meta",
-        onclick: group ? () => this.toggle(c.key) : null,
+        style: { gridColumn: `${x + 1} / span ${span}`, gridRow: `${row + 1} / span ${rows}` },
         oncontextmenu: (e) => this.headMenu(e, c, !!n.kids),
       },
       h("span.label", {}, label),
     );
-    if (c.kind !== "meta") {
-      el.addEventListener("dragstart", (e) => {
-        e.dataTransfer.setData("text/x-trak-col", c.key);
-        e.dataTransfer.effectAllowed = "move";
-      });
-      el.addEventListener("dragover", (e) => {
-        if ([...e.dataTransfer.types].includes("text/x-trak-col")) {
-          e.preventDefault();
-          el.classList.add("drop");
-        }
-      });
-      el.addEventListener("dragleave", () => el.classList.remove("drop"));
-      el.addEventListener("drop", (e) => {
-        e.preventDefault();
-        el.classList.remove("drop");
-        this.move(e.dataTransfer.getData("text/x-trak-col"), c.key);
-      });
-    }
+    tooltip(el, () => headTip(c, group && !n.kids));
+    this.headCells.push({ col: c, el });
+    el.addEventListener("pointerdown", (e) => this.press(e, c));
     if (!n.kids) {
-      const grip = h("div.grip", { title: "Drag to resize" });
-      grip.addEventListener("pointerdown", (e) => this.resize(e, c));
-      grip.addEventListener("click", (e) => e.stopPropagation());
+      const grip = h("div.grip");
+      grip.addEventListener("pointerdown", (e) => this.resize(e, c, x));
+      grip.addEventListener("dblclick", (e) => (e.stopPropagation(), this.fitOne(c)));
       el.append(grip);
     }
     return el;
@@ -247,41 +292,134 @@ export class TableView {
     this.redraw();
   }
 
-  /** Move column `from` before column `to`, if they share a parent. */
-  move(from, to) {
-    const parent = (k) => (k.includes(".") ? k.slice(0, k.lastIndexOf(".") + 1) : "");
-    if (!from || from === to || parent(from) !== parent(to)) return;
-    const p = parent(from);
-    const siblings = p ? findCol(this.columns, p.slice(0, -1)).children : this.columns.filter((c) => c.kind !== "meta");
-    const names = siblings.map((c) => c.name);
-    const fromName = from.slice(p.length);
-    names.splice(names.indexOf(fromName), 1);
-    names.splice(names.indexOf(to.slice(p.length)), 0, fromName);
-    this.layout.order[p] = names;
+  /** A press on a header: a click opens or closes a group, a drag moves the column. */
+  press(e, c) {
+    if (e.button !== 0 || e.target.classList.contains("grip")) return;
+    const x0 = e.clientX;
+    let drag = null;
+    const move = (ev) => {
+      if (!drag && c.kind !== "meta" && Math.abs(ev.clientX - x0) > 4) drag = this.beginDrag(c, ev);
+      if (drag) this.dragTo(drag, ev.clientX);
+    };
+    const up = () => {
+      removeEventListener("pointermove", move);
+      removeEventListener("pointerup", up);
+      if (drag) this.endDrag(drag);
+      else if (c.kind === "group") this.toggle(c.key);
+    };
+    addEventListener("pointermove", move);
+    addEventListener("pointerup", up);
+  }
+
+  beginDrag(c, ev) {
+    hideTip();
+    const p = parentKey(c.key);
+    const head = this.head.getBoundingClientRect();
+    const sibs = this.headCells
+      .filter((s) => s.col.kind !== "meta" && parentKey(s.col.key) === p)
+      .map((s) => {
+        const r = s.el.getBoundingClientRect();
+        return { col: s.col, left: r.left - head.left, right: r.right - head.left };
+      });
+    const el = this.headCells.find((s) => s.col === c).el;
+    const r = el.getBoundingClientRect();
+    const ghost = el.cloneNode(true);
+    ghost.classList.add("ghost");
+    Object.assign(ghost.style, { left: `${r.left}px`, top: `${r.top}px`, width: `${r.width}px`, height: `${r.height}px` });
+    document.body.append(ghost);
+    el.classList.add("dragging");
+    const top = r.top - head.top;
+    const mark = h("div.drop-mark", { style: { top: `${top}px`, height: `${this.head.offsetHeight - top}px` } });
+    this.head.append(mark);
+    this.el.classList.add("moving");
+    return { c, p, sibs, el, ghost, mark, grab: ev.clientX - r.left, at: -1 };
+  }
+
+  dragTo(d, x) {
+    d.ghost.style.left = `${x - d.grab}px`;
+    // Scroll when the pointer nears an edge of the table.
+    const w = this.wrap.getBoundingClientRect();
+    if (x > w.right - 30) this.wrap.scrollLeft += 20;
+    else if (x < w.left + 30) this.wrap.scrollLeft -= 20;
+    const rel = x - this.head.getBoundingClientRect().left;
+    let at = d.sibs.findIndex((s) => rel < (s.left + s.right) / 2);
+    if (at < 0) at = d.sibs.length;
+    d.at = at;
+    d.mark.style.left = `${(at < d.sibs.length ? d.sibs[at].left : d.sibs[d.sibs.length - 1].right) - 1}px`;
+  }
+
+  endDrag(d) {
+    d.ghost.remove();
+    d.mark.remove();
+    d.el.classList.remove("dragging");
+    this.el.classList.remove("moving");
+    if (d.at < 0) return;
+    const names = d.sibs.map((s) => s.col.name);
+    const from = names.indexOf(d.c.name);
+    names.splice(from, 1);
+    names.splice(d.at > from ? d.at - 1 : d.at, 0, d.c.name);
+    if (names.every((n, i) => n === d.sibs[i].col.name)) return;
+    this.layout.order[d.p] = names;
     this.save();
     this.buildColumns();
     this.redraw();
   }
 
-  resize(e, c) {
+  /** Drag a column's right edge. Only its CSS variable changes until the drag ends. */
+  resize(e, c, i) {
+    if (e.button !== 0) return;
     e.preventDefault();
     e.stopPropagation();
+    hideTip();
     const start = e.clientX;
     const w0 = this.width(c);
     const grip = e.target;
     grip.setPointerCapture(e.pointerId);
+    this.el.classList.add("resizing");
+    let w = w0;
+    let frame = 0;
     const move = (ev) => {
-      this.layout.widths[c.key] = Math.max(40, Math.round(w0 + ev.clientX - start));
-      this.drawHead();
-      this.drawRows(true);
+      w = Math.max(MIN_WIDTH, Math.round(w0 + ev.clientX - start));
+      frame ||= requestAnimationFrame(() => {
+        frame = 0;
+        this.grid.style.setProperty(`--c${i}`, `${w}px`);
+        this.syncScroll();
+      });
     };
     const up = () => {
       grip.removeEventListener("pointermove", move);
       grip.removeEventListener("pointerup", up);
-      this.save();
+      grip.removeEventListener("pointercancel", up);
+      this.el.classList.remove("resizing");
+      if (w !== w0) {
+        this.layout.widths[c.key] = w;
+        this.save();
+      }
     };
     grip.addEventListener("pointermove", move);
     grip.addEventListener("pointerup", up);
+    grip.addEventListener("pointercancel", up);
+  }
+
+  /** Forget a column's width, so it fits its content again. */
+  fitOne(c) {
+    delete this.layout.widths[c.key];
+    this.save();
+    this.drawHead();
+  }
+
+  fitAll() {
+    this.layout.widths = {};
+    this.save();
+    this.drawHead();
+  }
+
+  /** Keep the horizontal bar in step with the table's width and scroll. */
+  syncScroll() {
+    const over = this.wrap.scrollWidth > this.wrap.clientWidth + 1;
+    if (this.hbar.el.hidden === over) this.hbar.el.hidden = !over;
+    this.hbar.setRange(this.wrap.scrollWidth, this.wrap.clientWidth);
+    this.hbar.set(this.wrap.scrollLeft, true);
   }
 
   headMenu(e, c, open) {
@@ -289,7 +427,8 @@ export class TableView {
     if (c.kind === "group") items.push([open ? "Collapse" : "Expand", () => this.toggle(c.key)]);
     if (c.kind !== "meta") items.push([c.kind === "group" ? "Hide group" : "Hide column", () => this.hide(c.key)]);
     if (this.layout.hidden.length) items.push(["Show all columns", () => this.showAll()]);
-    if (this.layout.widths[c.key]) items.push(["Reset width", () => (delete this.layout.widths[c.key], this.save(), this.redraw())]);
+    if (this.layout.widths[c.key] != null) items.push(["Fit to content", () => this.fitOne(c)]);
+    if (Object.keys(this.layout.widths).length) items.push(["Fit all columns", () => this.fitAll()]);
     items.push(["Reset layout", () => this.resetLayout()]);
     contextMenu(e, items);
   }
@@ -390,6 +529,8 @@ export class TableView {
     const rows = await this.loadRows(p, p + this.page);
     if (token !== this.token) return;
     this.current = rows;
+    // Columns fit the first rows they show.
+    if (this.leaves?.some((c) => !this.wants.has(c.key) && this.layout.widths[c.key] == null)) this.drawHead();
     this.drawRows();
     rendered(fromJump ? "table-jump" : "table-scroll", t0);
     this.app.updateSpec(this);
@@ -428,8 +569,7 @@ export class TableView {
   }
 
   cell(r, c) {
-    const w = this.width(c);
-    const el = h("div.c", { style: { width: `${w}px` } });
+    const el = h("div.c");
     if (c.kind === "meta") {
       el.classList.add(c.key === "#" ? "n" : "time");
       el.textContent = c.key === "#" ? fmtInt(r.m) : fmtStamp(r.stamp);
@@ -437,10 +577,7 @@ export class TableView {
     }
     if (c.kind === "group") {
       el.classList.add("summary");
-      const parts = [];
-      for (const [k, v] of r.cells) if (k.startsWith(c.key + ".") && v.text != null) parts.push(`${k.slice(c.key.length + 1)}: ${firstLine(v.text, 40)[0]}`);
-      el.textContent = parts.join(" · ");
-      el.title = "Click the header to expand";
+      el.textContent = groupSummary(r, c);
       return el;
     }
     const v = r.cells.get(c.key);
@@ -502,6 +639,30 @@ export class TableView {
   destroy() {
     this.resizeObs?.disconnect();
   }
+}
+
+function fallbackWidth(c) {
+  return c.kind === "meta" ? (c.key === "#" ? 80 : 190) : c.kind === "list" ? 90 : c.kind === "group" ? 220 : c.field?.block ? 320 : c.field?.kind === "num" ? 100 : 150;
+}
+
+const parentKey = (k) => (k.includes(".") ? k.slice(0, k.lastIndexOf(".") + 1) : "");
+
+/** A collapsed group's cell: its leaves, one line each, joined. */
+function groupSummary(r, c) {
+  const parts = [];
+  for (const [k, v] of r.cells) if (k.startsWith(c.key + ".") && v.text != null) parts.push(`${k.slice(c.key.length + 1)}: ${firstLine(v.text, 40)[0]}`);
+  return parts.join(" · ");
+}
+
+/** A header's tooltip: the column's path and type, and its description. */
+function headTip(c, collapsed) {
+  if (c.kind === "meta") return c.key === "#" ? "The item's number in the list" : "When the item was appended";
+  const desc = descOf(c.field);
+  return [
+    h("div.tip-head", {}, h("b", {}, c.key), " ", h("span.dim", {}, typeName(c.field))),
+    desc ? h("div", {}, desc) : null,
+    collapsed ? h("div.dim", {}, "Click to expand. Drag to move.") : h("div.dim", {}, c.kind === "group" ? "Click to collapse. Drag to move." : "Drag to move. Drag the right edge to resize."),
+  ];
 }
 
 function rank(order, name) {
