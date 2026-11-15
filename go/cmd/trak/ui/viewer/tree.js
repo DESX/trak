@@ -135,7 +135,9 @@ export class TreeView {
     const ids = new Map();
     const lines = await this.lines(obj, "", 0, ids, item);
     if (token !== this.token) return;
-    const first = this.ids.size === 0;
+    // Highlight changes only when the position moved, not when a line was opened.
+    const first = this.ids.size === 0 || p === this.shown;
+    this.shown = p;
     for (const l of lines) {
       if (!first && l.id !== undefined && this.ids.has(l.rel) && this.ids.get(l.rel) !== l.id) l.el.classList.add("changed");
       if (!first && l.id !== undefined && !this.ids.has(l.rel) && l.depth > 0) l.el.classList.add("added");
@@ -213,11 +215,20 @@ export class TreeView {
     const id = `${list.count}:${list.root.end}:${list.root.i}`;
     ids.set(rel, id);
     const open = this.open.has(rel);
+    // A list of values, such as a setting, shows its latest value: its current one.
+    let latest = null;
+    if (!open && list.count > 0 && list.field.item.kind !== "object") {
+      const it = await list.item(list.count - 1);
+      const text = await it.text(200);
+      const k = list.field.item.kind;
+      latest = [": ", k === "enum" ? h("span.enum", { "data-v": text }, text) : h(`span.v${k === "num" ? ".num" : ""}`, {}, firstLine(text, 120)[0] || "(empty)")];
+    }
+    const count = latest ? ` ${list.count === 1 ? "1 value" : `${fmtInt(list.count)} values`}` : ` [${fmtInt(list.count)}]`;
     const head = this.line(
       depth,
       rel,
       id,
-      [h("span.twisty", {}, open ? "▾" : "▸"), h("span.key", {}, list.field.name), h("span.dim", {}, ` [${fmtInt(list.count)}]`)],
+      [h("span.twisty", {}, open ? "▾" : "▸"), h("span.key", {}, list.field.name), ...(latest ?? []), h("span.dim.history", { title: "Every value, newest last" }, count)],
       list.field,
       { toggle: rel, menu: (e) => this.app.listMenu(e, list.path) },
     );

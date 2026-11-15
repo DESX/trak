@@ -242,10 +242,26 @@ main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .line.focus { border-left-color: var(--accent); background: var(--accent-soft); }
 .twisty { display: inline-block; width: 14px; color: var(--dim); }
 .key { color: var(--accent); }
+.line .history { margin-left: 8px; font-size: 11px; }
 .line .src { margin-left: 10px; color: var(--dim); font-size: 11px; visibility: hidden; }
 .line:hover .src { visibility: visible; }
 .page { padding: 0 6px; font-size: 11px; margin-left: 4px; }
 .expand { cursor: pointer; }
+
+/* Schema */
+.schema-wrap { flex: 1; min-height: 0; overflow: auto; }
+.schema { padding: 8px 0 40px; font-family: var(--mono); font-size: 12.5px; }
+.stype { padding: 6px 0 10px; border-bottom: 1px solid var(--line); scroll-margin-top: 4px; }
+.stype.flash { animation: flash 1.2s ease-out; }
+@keyframes flash { from { background: var(--hit); } to { background: transparent; } }
+.stype-head { padding: 2px 12px; }
+.stype-head b { font-weight: 600; }
+.used { padding: 0 12px 4px 30px; font-family: var(--sans); font-size: 12px; }
+.kw { color: var(--dim); }
+.kw.event { color: var(--accent); font-weight: 500; }
+.stype-leaf { color: var(--text); }
+.schema-text { margin: 0; padding: 12px 14px; font-family: var(--mono); font-size: 12px; white-space: pre-wrap; }
+.toolbar button.on { background: var(--accent-soft); border-color: var(--accent); }
 
 /* Log */
 .log { padding: 8px 0 40px; font-family: var(--mono); font-size: 12px; }

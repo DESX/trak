@@ -4,9 +4,10 @@
 
 import { BlobSource, ServeSource, TrakFile } from "../js/src/index.js";
 import { LogView } from "./log.js";
+import { SchemaView } from "./schema.js";
 import { TableView } from "./table.js";
 import { TreeView } from "./tree.js";
-import { contextMenu, fmtBytes, fmtInt, h, showText, store, tooltip } from "./util.js";
+import { contextMenu, fmtBytes, fmtInt, h, store, tooltip } from "./util.js";
 import { UI_VERSION } from "./version.js";
 
 const API = "api";
@@ -39,7 +40,7 @@ class App {
     document.getElementById("debug-toggle").addEventListener("click", () => this.toggleDebug());
     document.getElementById("debug-clear").addEventListener("click", () => ((this.requests = []), this.drawDebug()));
     document.getElementById("follow").addEventListener("click", () => this.toggleFollow());
-    document.getElementById("schema").addEventListener("click", () => this.current && showText("Schema", () => this.current.file.schema.text));
+    document.getElementById("schema").addEventListener("click", () => this.current && this.navigate("schema:"));
     addEventListener("hashchange", () => this.route());
     this.drawFiles();
     this.route();
@@ -250,7 +251,7 @@ class App {
 
   async openSpec(spec) {
     const o = this.current;
-    const m = /^(tree|items|table|log):([^@]*)(?:@(-?\d+))?$/.exec(spec);
+    const m = /^(tree|items|table|log|schema):([^@]*)(?:@(-?\d+))?$/.exec(spec);
     if (!m) return this.setStatus(`Bad view ${spec}`, true);
     const [, kind, path, at] = m;
     const pos = at == null ? null : Number(at);
@@ -258,7 +259,8 @@ class App {
     let tab = o.tabs.find((t) => t.id === id);
     try {
       if (!tab) {
-        const view = kind === "table" ? new TableView(this, o.file, path) : kind === "log" ? new LogView(this, o.file) : new TreeView(this, o.file, kind, path);
+        const view =
+          kind === "table" ? new TableView(this, o.file, path) : kind === "log" ? new LogView(this, o.file) : kind === "schema" ? new SchemaView(this, o.file) : new TreeView(this, o.file, kind, path);
         tab = { id, view };
         o.tabs.push(tab);
         await view.init(pos ?? 0);
