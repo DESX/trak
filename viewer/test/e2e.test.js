@@ -189,9 +189,16 @@ describe("viewer", () => {
       r.jump = stats(jumps);
       check("jump", r.jump, TARGETS.jump);
 
+      // Hidden tables keep their page size, so one shown again draws a full page at once.
+      const pages = await p.evaluate(() => window.trakApp.current.tabs.filter((t) => t.view.kind === "table").map((t) => t.view.page));
+      assert.ok(pages.every((n) => n >= 10), `table pages ${pages}`);
+
       // Scroll page by page and row by row in the largest list, from a cold spot.
-      await p.evaluate((path) => window.trakApp.navigate(`table:${path}@0`), big.path);
-      await p.waitForSelector(".view:not([hidden]) .row");
+      const shown = await p.evaluate(async (path) => {
+        await window.trakApp.navigate(`table:${path}@0`);
+        return document.querySelectorAll(".view:not([hidden]) .row").length;
+      }, big.path);
+      assert.ok(shown >= 10, `shown again with ${shown} rows`);
       await timed(p, "table", jumpTo, Math.floor(big.count * 0.37));
       const scrolls = [];
       let blank = 0;

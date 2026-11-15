@@ -96,6 +96,7 @@ export class TableView {
   }
 
   resized() {
+    if (!this.wrap.clientHeight) return; // hidden: keep the page for when it shows again
     if (this.wrap.clientWidth !== this.wrapWidth) {
       this.wrapWidth = this.wrap.clientWidth;
       if (this.leaves) this.drawHead();
@@ -615,7 +616,9 @@ export class TableView {
 
   show() {
     this.el.hidden = false;
-    if (this.drawn === -1 && this.page) this.go(this.pos, true);
+    const page = this.page;
+    this.resized(); // now, not when the observer next runs: the window may have changed size
+    if (this.page === page && this.drawn === -1 && this.page) this.go(this.pos, true);
     this.el.focus({ preventScroll: true });
   }
 
